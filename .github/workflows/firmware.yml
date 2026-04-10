@@ -98,6 +98,9 @@ jobs:
           EOF
           
           make defconfig
+          sed -i 's/# CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000 is not set/CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y/' .config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y" >> .config
+          make defconfig
 
       - name: Build firmware
         run: |
