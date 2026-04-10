@@ -1,0 +1,84 @@
+CERBERUS SOURCE-AVAILABLE LICENSE v1.0
+
+Copyright (c) 2025 BackupFaun. All rights reserved.
+
+TERMS AND CONDITIONS
+
+1. DEFINITIONS
+   "Software" refers to the Cerberus Network Control System, including
+   all source code, binaries, documentation, assets, and associated files
+   in this repository.
+   
+   "Author" refers to BackupFaun, the original creator of this Software.
+   
+   "You" refers to any individual or entity accessing, using, copying,
+   modifying, or distributing this Software.
+
+2. SOURCE AVAILABILITY
+   The source code of this Software is made publicly available for
+   viewing, learning, and personal use. This does NOT constitute an
+   open-source license. The Author retains all rights not explicitly
+   granted below.
+
+3. PERMITTED USES
+   You MAY:
+   a) View, read, and study the source code.
+   b) Download and use the Software for personal, non-commercial purposes.
+   c) Fork this repository and create modifications for personal,
+      non-commercial use.
+   d) Share links to this repository.
+
+4. ATTRIBUTION REQUIREMENT
+   Any use, fork, modification, derivative work, or redistribution of
+   this Software — in whole or in part — MUST include:
+   a) Clear and prominent credit to "BackupFaun" as the original author.
+   b) A link to the original repository.
+   c) This license file, unmodified, in its entirety.
+   
+   Attribution must be visible in:
+   - The README or equivalent documentation
+   - Any user-facing interface that displays an "about" or "credits" section
+   - Any distribution or publication that includes this Software
+
+5. RESTRICTIONS
+   You MAY NOT:
+   a) Use this Software, or any part of it, for commercial purposes.
+      This includes but is not limited to: selling the Software, offering
+      it as a paid service, bundling it with commercial products, using it
+      to generate revenue directly or indirectly, or incorporating it into
+      any product or service that is sold or monetized.
+   b) Remove, alter, or obscure any attribution, copyright notices, or
+      this license.
+   c) Claim authorship or ownership of this Software or any substantial
+      portion of it.
+   d) Sublicense, sell, or transfer rights to this Software.
+   e) Use the name "Cerberus", the Author's name, or the project's
+      branding to endorse or promote derivative works without explicit
+      written permission from the Author.
+
+6. FORKS AND DERIVATIVE WORKS
+   Forks and modifications are permitted under these conditions:
+   a) The fork must retain this license in full.
+   b) The fork must clearly state it is a derivative work and credit
+      BackupFaun as the original author.
+   c) The fork must not be used for any commercial purpose.
+   d) The fork must not misrepresent itself as the original Software.
+
+7. NO WARRANTY
+   THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   THE AUTHOR IS NOT RESPONSIBLE FOR ANY DAMAGE, LOSS, LEGAL CONSEQUENCE,
+   OR LIABILITY ARISING FROM THE USE OR MISUSE OF THIS SOFTWARE. USE AT
+   YOUR OWN RISK.
+
+8. TERMINATION
+   Any violation of these terms automatically terminates your rights
+   under this license. Upon termination, you must destroy all copies
+   of the Software in your possession.
+
+9. GOVERNING LAW
+   This license shall be interpreted under the laws of the jurisdiction
+   in which the Author resides.
+
+For commercial licensing inquiries, contact the Author directly.
