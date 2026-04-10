@@ -2,7 +2,6 @@
 
 **Network Control System** — WiFi Pineapple-grade offensive network toolkit running on a $70 router.
 
-![License](https://img.shields.io/badge/license-MIT-00ffc8)
 ![Go](https://img.shields.io/badge/Go-1.22-00ADD8)
 ![Platform](https://img.shields.io/badge/platform-GL--MT3000-ff4757)
 
