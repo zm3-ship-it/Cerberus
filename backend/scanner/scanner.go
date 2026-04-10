@@ -91,15 +91,56 @@ func (s *Scanner) Scan() error {
 
 	log.Println("[*] Starting scan...")
 
-	// Find wireless interfaces
-	iface := findWirelessInterface()
-	log.Printf("[*] Using interface: %s", iface)
+	// Phase 1: Scan APs - try all wireless interfaces
+	var networks []Network
+	ifaces := getAllWirelessInterfaces()
+	log.Printf("[*] Wireless interfaces: %v", ifaces)
 
-	// Phase 1: Scan APs using iwinfo (built into OpenWrt)
-	networks := scanNetworksIwinfo(iface)
+	for _, iface := range ifaces {
+		log.Printf("[*] Trying iwinfo scan on %s...", iface)
+		nets := scanNetworksIwinfo(iface)
+		if len(nets) > 0 {
+			networks = nets
+			log.Printf("[*] Found %d networks on %s via iwinfo", len(nets), iface)
+			break
+		}
+		log.Printf("[*] Trying iw scan on %s...", iface)
+		nets = scanNetworksIw(iface)
+		if len(nets) > 0 {
+			networks = nets
+			log.Printf("[*] Found %d networks on %s via iw", len(nets), iface)
+			break
+		}
+	}
+
+	// Also try phy interfaces directly
 	if len(networks) == 0 {
-		// Fallback to iw
-		networks = scanNetworksIw(iface)
+		for _, phy := range []string{"phy0", "phy1", "phy0-ap0", "phy1-ap0", "phy0-sta0", "phy1-sta0"} {
+			nets := scanNetworksIwinfo(phy)
+			if len(nets) > 0 {
+				networks = nets
+				log.Printf("[*] Found %d networks on %s", len(nets), phy)
+				break
+			}
+		}
+	}
+
+	// Last resort: iwinfo with no specific interface
+	if len(networks) == 0 {
+		log.Println("[*] Trying iwinfo scan on all detected interfaces...")
+		out, _ := exec.Command("iwinfo").Output()
+		re := regexp.MustCompile(`^(\S+)\s+ESSID:`)
+		for _, line := range strings.Split(string(out), "\n") {
+			m := re.FindStringSubmatch(line)
+			if len(m) > 1 {
+				nets := scanNetworksIwinfo(m[1])
+				if len(nets) > 0 {
+					networks = nets
+					log.Printf("[*] Found %d networks on %s", len(nets), m[1])
+					break
+				}
+			}
+		}
 	}
 
 	s.mu.Lock()
@@ -148,24 +189,7 @@ func scanNetworksIwinfo(iface string) []Network {
 
 	out, err := exec.Command("iwinfo", iface, "scan").Output()
 	if err != nil {
-		log.Printf("[!] iwinfo scan failed: %v (trying all interfaces)", err)
-		// Try scanning on all interfaces
-		devOut, _ := exec.Command("iw", "dev").Output()
-		for _, line := range strings.Split(string(devOut), "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "Interface ") {
-				altIface := strings.TrimPrefix(line, "Interface ")
-				out2, err2 := exec.Command("iwinfo", altIface, "scan").Output()
-				if err2 == nil && len(out2) > 0 {
-					out = out2
-					err = nil
-					break
-				}
-			}
-		}
-		if err != nil {
-			return networks
-		}
+		return networks
 	}
 
 	lines := strings.Split(string(out), "\n")
@@ -374,24 +398,39 @@ func scanClients() []Client {
 
 func parseArpScan() []Client {
 	var clients []Client
-	out, err := exec.Command("arp-scan", "--localnet", "--quiet").Output()
-	if err != nil {
-		log.Printf("[!] arp-scan failed: %v", err)
-		return clients
-	}
 
-	re := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:]{17})\s+(.*)`)
-	for _, line := range strings.Split(string(out), "\n") {
-		m := re.FindStringSubmatch(line)
-		if m != nil {
-			clients = append(clients, Client{
-				IP:     m[1],
-				MAC:    strings.ToUpper(m[2]),
-				Vendor: strings.TrimSpace(m[3]),
-				State:  "ARP",
-			})
+	// Try br-lan first (OpenWrt bridge), then eth0, then no interface flag
+	for _, iface := range []string{"br-lan", "eth0", ""} {
+		var cmd *exec.Cmd
+		if iface != "" {
+			cmd = exec.Command("arp-scan", "--interface", iface, "--localnet", "--quiet")
+		} else {
+			cmd = exec.Command("arp-scan", "--localnet", "--quiet")
+		}
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+
+		re := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:]{17})\s+(.*)`)
+		for _, line := range strings.Split(string(out), "\n") {
+			m := re.FindStringSubmatch(line)
+			if m != nil {
+				clients = append(clients, Client{
+					IP:     m[1],
+					MAC:    strings.ToUpper(m[2]),
+					Vendor: strings.TrimSpace(m[3]),
+					State:  "ARP",
+				})
+			}
+		}
+		if len(clients) > 0 {
+			log.Printf("[*] arp-scan found %d clients on %s", len(clients), iface)
+			return clients
 		}
 	}
+
+	log.Printf("[!] arp-scan found no clients")
 	return clients
 }
 

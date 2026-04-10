@@ -164,4 +164,4 @@ For authorized testing and parental monitoring only. You are responsible for com
 
 ## License
 
-MIT
+Cerberus Source-Available License v1.0 — see [LICENSE](LICENSE)
