@@ -143,6 +143,11 @@ DEFCONFIG
 
 make defconfig
 
+# Force-enable GL-MT3000 (defconfig sometimes resets device selection)
+sed -i 's/# CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000 is not set/CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y/' .config
+echo "CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y" >> .config
+make defconfig
+
 # Copy custom filesystem overlay into the OpenWrt tree
 # OpenWrt automatically includes anything in the 'files' directory at root
 mkdir -p files/etc/uci-defaults files/etc/config
