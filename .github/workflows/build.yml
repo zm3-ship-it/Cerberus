@@ -1,0 +1,98 @@
+name: Build Cerberus
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build backend (ARM64 - GL-MT3000)
+        run: |
+          cd backend
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/cerberus .
+          echo "✓ Backend compiled for linux/arm64"
+
+      - name: Build backend (AMD64 - testing/VM)
+        run: |
+          cd backend
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/cerberus-x86 .
+          echo "✓ Backend compiled for linux/amd64"
+
+      - name: Package frontend
+        run: |
+          mkdir -p dist/www
+          cp frontend/cerberus-dashboard.jsx dist/www/
+          cp frontend/cerberus-api.js dist/www/
+          cp frontend/index.html dist/www/
+          curl -sL "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" -o dist/www/react.production.min.js
+          curl -sL "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" -o dist/www/react-dom.production.min.js
+          curl -sL "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js" -o dist/www/babel.min.js
+          echo "✓ Frontend packaged with bundled JS"
+
+      - name: Create init script
+        run: |
+          mkdir -p dist/etc
+          cat > dist/etc/cerberus.init << 'EOF'
+          #!/bin/sh /etc/rc.common
+          START=99
+          STOP=10
+          start() { /usr/bin/cerberus > /var/log/cerberus.log 2>&1 & }
+          stop() { killall cerberus 2>/dev/null; }
+          restart() { stop; sleep 1; start; }
+          EOF
+          chmod +x dist/etc/cerberus.init
+
+      - name: Create install script
+        run: |
+          cp scripts/install.sh dist/
+          chmod +x dist/install.sh
+
+      - name: Package release
+        run: |
+          cd dist
+          tar -czf ../cerberus-release.tar.gz .
+          echo "✓ Release packaged: $(du -h ../cerberus-release.tar.gz | cut -f1)"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cerberus-build
+          path: cerberus-release.tar.gz
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cerberus-release.tar.gz
+            dist/cerberus
+            dist/cerberus-x86
+          body: |
+            ## Cerberus ${{ github.ref_name }}
+            
+            ### Quick Install
+            ```bash
+            tar -xzf cerberus-release.tar.gz
+            scp cerberus root@192.168.1.1:/usr/bin/cerberus
+            scp -r www/* root@192.168.1.1:/www/cerberus/
+            ssh root@192.168.1.1
+            chmod +x /usr/bin/cerberus && /etc/init.d/cerberus restart
+            ```
+            
+            Dashboard: `http://192.168.1.1:1471`
+            
+            All JS bundled — works fully offline.
