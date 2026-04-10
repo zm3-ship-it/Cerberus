@@ -2,10 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"cerberus/adapters"
 	"cerberus/captive"
@@ -53,6 +56,37 @@ func NewRouter(s *scanner.Scanner, m *mitm.Engine, d *deauth.Engine, e *eviltwin
 	mux.HandleFunc("/api/mitm/stop", w(func(rw http.ResponseWriter, rq *http.Request) { var t T; dec(rq, &t); r.mitm.StopTarget(t.MAC); j(rw, M{"status": "ok"}) }))
 	mux.HandleFunc("/api/mitm/targets", w(func(rw http.ResponseWriter, rq *http.Request) { j(rw, r.mitm.GetActiveTargets()) }))
 	mux.HandleFunc("/api/mitm/dns", w(func(rw http.ResponseWriter, rq *http.Request) { j(rw, r.mitm.GetDNSLog()) }))
+
+	// DNS Spoofing
+	mux.HandleFunc("/api/dns/spoof", w(func(rw http.ResponseWriter, rq *http.Request) {
+		if rq.Method == "GET" {
+			// Read current rules
+			data, err := os.ReadFile("/tmp/cerberus_dns_spoof.conf")
+			if err != nil { j(rw, M{"rules": []string{}}); return }
+			var rules []M
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "address=/") {
+					parts := strings.Split(strings.TrimPrefix(line, "address=/"), "/")
+					if len(parts) >= 2 { rules = append(rules, M{"domain": parts[0], "ip": parts[1]}) }
+				}
+			}
+			j(rw, M{"rules": rules}); return
+		}
+		var body struct { Rules []struct { Domain, IP string } `json:"rules"` }
+		dec(rq, &body)
+		var conf string
+		for _, r := range body.Rules {
+			if r.Domain != "" && r.IP != "" {
+				conf += fmt.Sprintf("address=/%s/%s\n", r.Domain, r.IP)
+			}
+		}
+		os.WriteFile("/tmp/cerberus_dns_spoof.conf", []byte(conf), 0644)
+		// Restart dnsmasq with spoof config
+		exec.Command("sh", "-c", "kill -HUP $(pidof dnsmasq) 2>/dev/null").Run()
+		log.Printf("[*] DNS spoof rules updated: %d rules", len(body.Rules))
+		j(rw, M{"status": "ok", "rules": len(body.Rules)})
+	}))
 
 	// Deauth
 	mux.HandleFunc("/api/deauth/start", w(func(rw http.ResponseWriter, rq *http.Request) { var t T; dec(rq, &t); r.dea.Start(t.MAC, t.BSSID); j(rw, M{"status": "ok"}) }))

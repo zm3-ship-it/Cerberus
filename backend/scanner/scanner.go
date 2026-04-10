@@ -444,12 +444,17 @@ func parseDHCPLeases() []Client {
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 4 {
+			ip := fields[2]
+			// Skip IPv6
+			if strings.Contains(ip, ":") {
+				continue
+			}
 			hostname := fields[3]
 			if hostname == "*" {
 				hostname = ""
 			}
 			clients = append(clients, Client{
-				IP:       fields[2],
+				IP:       ip,
 				MAC:      strings.ToUpper(fields[1]),
 				Hostname: hostname,
 				State:    "DHCP",
@@ -468,10 +473,17 @@ func parseNeighbors() []Client {
 	}
 
 	for _, line := range strings.Split(string(out), "\n") {
-		// Format: 192.168.1.12 dev br-lan lladdr aa:bb:cc:dd:ee:ff REACHABLE
 		fields := strings.Fields(line)
 		if len(fields) >= 5 && strings.Contains(line, "lladdr") {
 			ip := fields[0]
+			// Skip IPv6
+			if strings.Contains(ip, ":") {
+				continue
+			}
+			// Skip multicast and link-local
+			if strings.HasPrefix(ip, "224.") || strings.HasPrefix(ip, "ff") || strings.HasPrefix(ip, "169.254.") {
+				continue
+			}
 			mac := ""
 			state := ""
 			for i, f := range fields {
@@ -479,8 +491,11 @@ func parseNeighbors() []Client {
 					mac = strings.ToUpper(fields[i+1])
 				}
 			}
-			// Last field is state
 			state = fields[len(fields)-1]
+			// Skip FAILED entries
+			if state == "FAILED" {
+				continue
+			}
 
 			if mac != "" && ip != "" {
 				clients = append(clients, Client{

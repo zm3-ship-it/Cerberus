@@ -53,7 +53,15 @@ const AuthScreen = ({onAuth}) => {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { (async () => { const c = await storageGet("cerberus-creds"); setMode(c ? "login" : "setup"); })(); }, []);
+  useEffect(() => { (async () => {
+    const c = await storageGet("cerberus-creds");
+    if (!c) {
+      // First run — set default creds root/toor
+      const hash = await sha256("toor");
+      await storageSet("cerberus-creds", { user: "root", hash });
+    }
+    setMode("login");
+  })(); }, []);
 
   const doSetup = async () => {
     if (!u.trim()) { setErr("Username required"); return; }
@@ -114,7 +122,7 @@ const AuthScreen = ({onAuth}) => {
           {loading ? "\u27F3 "+(isSetup?"CREATING...":"AUTHENTICATING...") : isSetup?"CREATE ACCOUNT":"LOGIN"}
         </button>
       </div>
-      <div style={{textAlign:"center",marginTop:16,fontSize:8,color:"rgba(255,255,255,0.1)"}}>v0.2.0</div>
+      <div style={{textAlign:"center",marginTop:16,fontSize:8,color:"rgba(255,255,255,0.1)"}}>v0.2.0 {"\u00B7"} Default: root / toor</div>
     </div>
   </div>;
 };
@@ -139,11 +147,15 @@ const APDrop = ({aps,sel,onSel}) => {
 };
 
 // ═══════════════════ NAV ═══════════════════
-const NAV=[
+const NAV_CERBERUS=[
   {id:"dash",ic:"\u25C9",l:"Overview"},{id:"recon",ic:"\uD83D\uDCE1",l:"Recon"},
   {id:"targets",ic:"\uD83C\uDFAF",l:"Targets"},{id:"mitm",ic:"\uD83D\uDD00",l:"MITM"},
   {id:"twin",ic:"\uD83D\uDC7B",l:"Evil Twin"},{id:"portal",ic:"\uD83C\uDFA3",l:"Captive"},
-  {id:"log",ic:"\uD83D\uDCCB",l:"Logging"},{id:"cfg",ic:"\u2699\uFE0F",l:"Settings"},
+  {id:"log",ic:"\uD83D\uDCCB",l:"Logging"},
+];
+const NAV_ROUTER=[
+  {id:"net",ic:"\uD83C\uDF10",l:"Network"},{id:"sys",ic:"\uD83D\uDDA5",l:"System"},
+  {id:"cfg",ic:"\u2699\uFE0F",l:"Settings"},
 ];
 
 // ═══════════════════ MAIN APP ═══════════════════
@@ -159,6 +171,7 @@ function App() {
 
 function Dashboard({ onLogout }) {
   const [pg, setPg] = useState("dash");
+  const [sideMode, setSideMode] = useState("cerberus"); // cerberus or router
   const [aps, setAps] = useState([]);
   const [tAP, setTAP] = useState(null);
   const [cli, setCli] = useState([]);
@@ -181,11 +194,24 @@ function Dashboard({ onLogout }) {
   const [ls, setLs] = useState("");
   const [hsState, setHsState] = useState("idle");
   const [hsAP, setHsAP] = useState("");
+  const [hsClient, setHsClient] = useState("");
+  const [dnsRules, setDnsRules] = useState([]);
+  const [newDomain, setNewDomain] = useState("");
+  const [newIP, setNewIP] = useState("");
   const [adRoles, setAdRoles] = useState({scan:"wlan1",attack:"wlan2",upstream:"wlan0"});
   const [adapters, setAdapters] = useState([]);
   const [toast, setToast] = useState("");
   const ML = 5000;
   const pollRef = useRef(null);
+  const [wanCfg, setWanCfg] = useState({proto:"dhcp",ip:"",netmask:"255.255.255.0",gateway:"",dns1:"",dns2:""});
+  const [lanCfg, setLanCfg] = useState({ip:"192.168.1.1",netmask:"255.255.255.0",dhcp_enabled:true,dhcp_start:100,dhcp_limit:150,dhcp_lease:"12h"});
+  const [wifiCfg, setWifiCfg] = useState([]);
+  const [ifaces, setIfaces] = useState([]);
+  const [leases, setLeases] = useState([]);
+  const [sysInfo, setSysInfo] = useState({});
+  const [fwFile, setFwFile] = useState(null);
+  const [fwStatus, setFwStatus] = useState("");
+  const [rebootConfirm, setRebootConfirm] = useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
@@ -278,7 +304,7 @@ function Dashboard({ onLogout }) {
     setHsState("listening");
     showToast("Capturing handshake...");
     const ap = aps.find(a => (a.ssid||a.SSID) === hsAP);
-    await api("/handshake/start", "POST", { bssid: ap?.bssid||ap?.BSSID||"", ssid: hsAP, channel: String(ap?.ch||ap?.channel||ap?.Channel||6) });
+    await api("/handshake/start", "POST", { bssid: ap?.bssid||ap?.BSSID||"", ssid: hsAP, channel: String(ap?.ch||ap?.channel||ap?.Channel||6), client: hsClient || "" });
     const iv = setInterval(async () => {
       const st = await api("/handshake/status");
       if (st) {
@@ -296,6 +322,29 @@ function Dashboard({ onLogout }) {
     if (st && (st.cap_file || st.CapFile)) {
       window.open(API + "/api/handshake/download/" + (st.cap_file || st.CapFile));
     } else { showToast("No capture file available"); }
+  };
+
+  const addDnsRule = async () => {
+    if (!newDomain || !newIP) { showToast("Enter domain and IP"); return; }
+    const rule = { domain: newDomain, ip: newIP };
+    const updated = [...dnsRules, rule];
+    setDnsRules(updated);
+    await api("/dns/spoof", "POST", { rules: updated });
+    setNewDomain(""); setNewIP("");
+    showToast(`Spoofing ${newDomain} → ${newIP}`);
+  };
+
+  const removeDnsRule = async (idx) => {
+    const updated = dnsRules.filter((_, i) => i !== idx);
+    setDnsRules(updated);
+    await api("/dns/spoof", "POST", { rules: updated });
+    showToast("Rule removed");
+  };
+
+  const clearDnsRules = async () => {
+    setDnsRules([]);
+    await api("/dns/spoof", "POST", { rules: [] });
+    showToast("All spoof rules cleared");
   };
 
   const fDns = dns.filter(e => {
@@ -354,7 +403,10 @@ function Dashboard({ onLogout }) {
       {rcing&&aps.length===0&&<Mt t="\u27F3 Scanning..."/>}
     </Bx>
     <Bx s={{marginBottom:8,borderColor:hsState==="captured"?`${K.gn}25`:K.bx}}><Lb>WPA Handshake Capture</Lb>
-      <div style={{marginBottom:8}}><Sel value={hsAP} onChange={setHsAP} options={aps.filter(a => (a.enc||a.Enc)!=="Open").map(a => ({v:a.ssid||a.SSID,l:`${a.ssid||a.SSID} [${a.enc||a.Enc}]`}))} ph="Select target AP..."/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+        <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Target AP</div><Sel value={hsAP} onChange={setHsAP} options={aps.filter(a => (a.enc||a.Enc)!=="Open"&&(a.enc||a.Enc)!=="NONE").map(a => ({v:a.ssid||a.SSID||a.bssid||a.BSSID,l:`${a.ssid||a.SSID||a.bssid||a.BSSID} [${a.enc||a.Enc}]`}))} ph="Select AP..."/></div>
+        <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Deauth Target (optional)</div><Sel value={hsClient} onChange={setHsClient} options={[{v:"",l:"All clients (broadcast)"},...cli.map(c => ({v:getField(c,"mac","MAC"),l:`${getField(c,"host","hostname","Hostname")||getField(c,"mac","MAC")} — ${getField(c,"ip","IP")}`}))]} ph="Select client..."/></div>
+      </div>
       <Rw s={{gap:6}}>
         <Bn fn={doHandshake} dis={!hsAP||hsState==="listening"||hsState==="deauthing"} sm>{hsState==="idle"?"Capture Handshake":hsState==="listening"?"\u27F3 Listening...":hsState==="deauthing"?"\u27F3 Deauthing...":hsState==="captured"?"\u2713 Captured!":"Capture"}</Bn>
         {hsState==="captured"&&<Bn fn={downloadCap} sm v="g">{"\u2B07"} Download .cap</Bn>}
@@ -415,6 +467,27 @@ function Dashboard({ onLogout }) {
         {[{k:"arp",l:"ARP Spoofing",d:"Intercept via ARP"},{k:"dns",l:"DNS Logging",d:"Log DNS"},{k:"ssl",l:"SSL Strip",d:"Downgrade HTTPS"},{k:"spoof",l:"DNS Spoofing",d:"Redirect domains"}].map((a,i) => <Rw key={a.k} s={{justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${K.bx}`}}><div><div style={{fontSize:10,fontWeight:600}}>{a.l}</div><div style={{fontSize:8,color:K.dm}}>{a.d}</div></div><Tog on={mCfg[a.k]} fn={() => setMCfg(p => ({...p,[a.k]:!p[a.k]}))}/></Rw>)}
       </Bx>
     </div>
+    {/* DNS Spoofing Rules */}
+    <Bx s={{marginTop:8}}>
+      <Rw s={{justifyContent:"space-between",marginBottom:8}}><Lb>DNS Spoofing Rules</Lb>{dnsRules.length>0&&<Bn fn={clearDnsRules} sm v="d">Clear All</Bn>}</Rw>
+      <div style={{fontSize:9,color:K.dm,marginBottom:10}}>Redirect domains to custom IPs. Victims browsing these domains will be sent to your IP instead.</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:6,marginBottom:10}}>
+        <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Domain</div><input value={newDomain} onChange={e => setNewDomain(e.target.value)} placeholder="e.g. facebook.com" style={{background:K.ra,color:K.tx,border:`1px solid ${K.bx}`,borderRadius:5,padding:"7px 10px",fontSize:10,fontFamily:K.f,width:"100%",outline:"none",boxSizing:"border-box"}}/></div>
+        <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Redirect To IP</div><input value={newIP} onChange={e => setNewIP(e.target.value)} placeholder="e.g. 192.168.1.1" onKeyDown={e => e.key==="Enter"&&addDnsRule()} style={{background:K.ra,color:K.tx,border:`1px solid ${K.bx}`,borderRadius:5,padding:"7px 10px",fontSize:10,fontFamily:K.f,width:"100%",outline:"none",boxSizing:"border-box"}}/></div>
+        <div style={{alignSelf:"flex-end"}}><Bn fn={addDnsRule} sm>+ Add</Bn></div>
+      </div>
+      {dnsRules.length > 0 ? <div style={{border:`1px solid ${K.bx}`,borderRadius:5,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 40px",gap:6,padding:"8px 12px",fontSize:7,fontWeight:700,letterSpacing:2,color:K.dm,borderBottom:`1px solid ${K.bx}`}}><span>DOMAIN</span><span>REDIRECT IP</span><span></span></div>
+        {dnsRules.map((r,i) => <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 40px",gap:6,padding:"7px 12px",fontSize:10,borderBottom:`1px solid ${K.bx}`,alignItems:"center"}}>
+          <span style={{color:K.cy,fontWeight:600}}>{r.domain}</span>
+          <span>{r.ip}</span>
+          <span onClick={() => removeDnsRule(i)} style={{color:K.rd,cursor:"pointer",fontSize:12,textAlign:"center"}}>{"\u2715"}</span>
+        </div>)}
+      </div> : <div style={{padding:16,textAlign:"center",color:K.dm,fontSize:10,border:`1px dashed ${K.bx}`,borderRadius:5}}>No spoof rules — add a domain above to redirect traffic</div>}
+      <div style={{marginTop:8,padding:"8px 10px",borderRadius:4,background:`${K.pu}06`,border:`1px solid ${K.pu}15`,fontSize:9,color:K.pu}}>
+        {"\uD83D\uDCA1"} Example: Spoof facebook.com → 192.168.1.1 to serve your captive portal page when victims visit Facebook.
+      </div>
+    </Bx>
   </div>; };
 
   const TwinPg = () => <div>
@@ -494,7 +567,182 @@ function Dashboard({ onLogout }) {
     </div>
   </div>;
 
-  const pages={dash:Dash,recon:Recon,targets:Targets,mitm:MitmPg,twin:TwinPg,portal:PortalPg,log:LogPg,cfg:CfgPg};
+  // ═══ Network Page ═══
+  const NetPg = () => {
+    useEffect(() => {
+      (async () => {
+        const w = await api("/network/wan"); if (w) setWanCfg(prev => ({...prev,...w}));
+        const l = await api("/network/lan"); if (l) setLanCfg(prev => ({...prev,...l}));
+        const wf = await api("/network/wifi"); if (wf && Array.isArray(wf)) setWifiCfg(wf);
+        const ifs = await api("/network/interfaces"); if (ifs && Array.isArray(ifs)) setIfaces(ifs);
+        const ls = await api("/network/dhcp/leases"); if (ls && Array.isArray(ls)) setLeases(ls);
+      })();
+    }, []);
+    const saveWan = async () => { await api("/network/wan","POST",wanCfg); showToast("WAN config saved — network restarting..."); };
+    const saveLan = async () => { await api("/network/lan","POST",lanCfg); showToast("LAN config saved — network restarting..."); };
+    const ni = (label,val,set,key,ph) => <div style={{marginBottom:8}}><div style={{fontSize:8,color:K.dm,marginBottom:3}}>{label}</div><input value={val[key]||""} onChange={e => set(p=>({...p,[key]:e.target.value}))} placeholder={ph||""} style={{background:K.ra,color:K.tx,border:`1px solid ${K.bx}`,borderRadius:5,padding:"7px 10px",fontSize:10,fontFamily:K.f,width:"100%",outline:"none",boxSizing:"border-box"}}/></div>;
+    return <div>
+      <Lb>Network Configuration</Lb>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+        <Bx>
+          <Lb>WAN</Lb>
+          <div style={{marginBottom:8}}><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Protocol</div>
+            <Sel value={wanCfg.proto||"dhcp"} onChange={v => setWanCfg(p=>({...p,proto:v}))} options={[{v:"dhcp",l:"DHCP (Auto)"},{v:"static",l:"Static IP"},{v:"pppoe",l:"PPPoE"}]}/></div>
+          {wanCfg.proto==="static"&&<div>
+            {ni("IP Address",wanCfg,setWanCfg,"ip","192.168.1.100")}
+            {ni("Netmask",wanCfg,setWanCfg,"netmask","255.255.255.0")}
+            {ni("Gateway",wanCfg,setWanCfg,"gateway","192.168.1.1")}
+          </div>}
+          {wanCfg.proto==="pppoe"&&<div>
+            {ni("Username",wanCfg,setWanCfg,"username","")}
+            {ni("Password",wanCfg,setWanCfg,"password","")}
+          </div>}
+          {ni("DNS 1",wanCfg,setWanCfg,"dns1","1.1.1.1")}
+          {ni("DNS 2",wanCfg,setWanCfg,"dns2","8.8.8.8")}
+          <Bn fn={saveWan} sx={{width:"100%"}}>Apply WAN</Bn>
+        </Bx>
+        <Bx>
+          <Lb>LAN</Lb>
+          {ni("IP Address",lanCfg,setLanCfg,"ip","192.168.1.1")}
+          {ni("Netmask",lanCfg,setLanCfg,"netmask","255.255.255.0")}
+          <Rw s={{justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${K.bx}`,marginBottom:8}}>
+            <div><div style={{fontSize:10,fontWeight:600}}>DHCP Server</div><div style={{fontSize:8,color:K.dm}}>Assign IPs automatically</div></div>
+            <Tog on={lanCfg.dhcp_enabled} fn={() => setLanCfg(p=>({...p,dhcp_enabled:!p.dhcp_enabled}))}/>
+          </Rw>
+          {lanCfg.dhcp_enabled&&<div>
+            {ni("Start Address",lanCfg,setLanCfg,"dhcp_start","100")}
+            {ni("Max Clients",lanCfg,setLanCfg,"dhcp_limit","150")}
+            {ni("Lease Time",lanCfg,setLanCfg,"dhcp_lease","12h")}
+          </div>}
+          <Bn fn={saveLan} sx={{width:"100%"}}>Apply LAN</Bn>
+        </Bx>
+      </div>
+      {/* WiFi */}
+      <Bx s={{marginBottom:8}}>
+        <Lb>WiFi Radios</Lb>
+        {wifiCfg.length>0 ? wifiCfg.map((w,idx) => <div key={idx} style={{padding:"10px 0",borderBottom:idx<wifiCfg.length-1?`1px solid ${K.bx}`:"none"}}>
+          <Rw s={{justifyContent:"space-between",marginBottom:6}}>
+            <span style={{fontSize:12,fontWeight:600,color:K.cy}}>Radio {idx} — {w.band||"2.4GHz"}</span>
+            <Tog on={w.enabled!==false} fn={async () => { await api("/network/wifi","POST",{index:idx,config:{...w,enabled:!w.enabled}}); showToast("WiFi toggled"); const wf=await api("/network/wifi"); if(wf)setWifiCfg(wf); }}/>
+          </Rw>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+            <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>SSID</div><input value={w.ssid||""} onChange={e=>{const n=[...wifiCfg];n[idx]={...n[idx],ssid:e.target.value};setWifiCfg(n);}} style={{background:K.ra,color:K.tx,border:`1px solid ${K.bx}`,borderRadius:5,padding:"7px 10px",fontSize:10,fontFamily:K.f,width:"100%",outline:"none",boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Password</div><input value={w.password||""} onChange={e=>{const n=[...wifiCfg];n[idx]={...n[idx],password:e.target.value};setWifiCfg(n);}} type="password" style={{background:K.ra,color:K.tx,border:`1px solid ${K.bx}`,borderRadius:5,padding:"7px 10px",fontSize:10,fontFamily:K.f,width:"100%",outline:"none",boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:8,color:K.dm,marginBottom:3}}>Encryption</div><Sel value={w.encryption||"psk2"} onChange={v=>{const n=[...wifiCfg];n[idx]={...n[idx],encryption:v};setWifiCfg(n);}} options={[{v:"psk2",l:"WPA2"},{v:"sae",l:"WPA3"},{v:"sae-mixed",l:"WPA2/WPA3"},{v:"none",l:"Open"}]}/></div>
+          </div>
+          <div style={{marginTop:6}}><Bn fn={async () => { await api("/network/wifi","POST",{index:idx,config:wifiCfg[idx]}); showToast("WiFi "+idx+" saved"); }} sm>Save Radio {idx}</Bn></div>
+        </div>) : <Mt t="No WiFi radios detected"/>}
+      </Bx>
+      {/* Interfaces */}
+      <Bx s={{marginBottom:8}}>
+        <Rw s={{justifyContent:"space-between",marginBottom:8}}><Lb>Interfaces</Lb><Bn fn={async()=>{const i=await api("/network/interfaces");if(i)setIfaces(i);showToast("Refreshed");}} sm v="g">Refresh</Bn></Rw>
+        {ifaces.length>0 ? ifaces.map((i,idx) => <div key={idx} style={{display:"grid",gridTemplateColumns:"100px 1fr 120px 100px 80px",gap:6,padding:"6px 0",borderBottom:`1px solid ${K.bx}`,alignItems:"center",fontSize:10}}>
+          <span style={{fontWeight:600,color:K.cy}}>{getField(i,"name","Name")}</span>
+          <span>{getField(i,"ip","IP")||"—"}</span>
+          <span style={{color:K.dm,fontSize:9}}>{getField(i,"mac","MAC")||"—"}</span>
+          <span style={{fontSize:9}}>{getField(i,"speed","Speed")||"—"}</span>
+          <Bdg c={getField(i,"up","Up")?K.gn:K.rd}>{getField(i,"up","Up")?"UP":"DOWN"}</Bdg>
+        </div>) : <Mt t="No interface data"/>}
+      </Bx>
+      {/* DHCP Leases */}
+      <Bx>
+        <Rw s={{justifyContent:"space-between",marginBottom:8}}><Lb>DHCP Leases</Lb><Bn fn={async()=>{const l=await api("/network/dhcp/leases");if(l)setLeases(l);}} sm v="g">Refresh</Bn></Rw>
+        {leases.length>0 ? leases.map((l,i) => <div key={i} style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1fr",gap:6,padding:"5px 0",borderBottom:`1px solid ${K.bx}`,fontSize:10}}>
+          <span style={{fontWeight:600}}>{getField(l,"hostname","Hostname")||"—"}</span>
+          <span>{getField(l,"ip","IP")}</span>
+          <span style={{color:K.dm}}>{getField(l,"mac","MAC")}</span>
+        </div>) : <Mt t="No active leases"/>}
+      </Bx>
+    </div>;
+  };
+
+  // ═══ System Page ═══
+  const SysPg = () => {
+    useEffect(() => {
+      const load = async () => { const i = await api("/system/info"); if (i) setSysInfo(i); };
+      load();
+      const iv = setInterval(load, 5000);
+      return () => clearInterval(iv);
+    }, []);
+    const pct = (v) => Math.min(100, Math.max(0, Math.round(v||0)));
+    const bar = (label, val, color) => <div style={{marginBottom:10}}>
+      <Rw s={{justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:9,color:K.dm}}>{label}</span><span style={{fontSize:10,fontWeight:600,color}}>{pct(val)}%</span></Rw>
+      <div style={{height:6,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${pct(val)}%`,background:color,borderRadius:3,transition:"width 0.5s ease"}}/></div>
+    </div>;
+    return <div>
+      <Lb>System</Lb>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+        <Bx>
+          <Lb>Info</Lb>
+          {[
+            ["Hostname",sysInfo.hostname||"OpenWrt"],
+            ["Uptime",sysInfo.uptime||"—"],
+            ["Firmware",sysInfo.firmware||"—"],
+            ["Kernel",sysInfo.kernel||"—"],
+            ["CPU",sysInfo.cpu_model||"—"],
+            ["Architecture",sysInfo.arch||"—"],
+          ].map(([k,v]) => <Rw key={k} s={{justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${K.bx}`}}>
+            <span style={{fontSize:9,color:K.dm}}>{k}</span>
+            <span style={{fontSize:10,fontWeight:500}}>{v}</span>
+          </Rw>)}
+        </Bx>
+        <Bx>
+          <Lb>Resources</Lb>
+          {bar("CPU", sysInfo.cpu_usage, K.cy)}
+          {bar("Memory", sysInfo.mem_percent, K.pu)}
+          {bar("Disk", sysInfo.disk_percent, K.am)}
+          <div style={{marginTop:8,fontSize:9,color:K.dm}}>
+            RAM: {Math.round((sysInfo.mem_used_kb||0)/1024)} / {Math.round((sysInfo.mem_total_kb||0)/1024)} MB
+          </div>
+        </Bx>
+      </div>
+      {/* Firmware Flash */}
+      <Bx s={{marginBottom:8}}>
+        <Lb>Firmware Update</Lb>
+        <div style={{fontSize:9,color:K.dm,marginBottom:10}}>Upload a .bin firmware image to flash the router. The router will reboot automatically.</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+          <input type="file" accept=".bin,.img" onChange={e => setFwFile(e.target.files[0])} style={{fontSize:10,fontFamily:K.f,color:K.tx}}/>
+          {fwFile && <Bn fn={async () => {
+            setFwStatus("uploading");
+            showToast("Uploading firmware...");
+            const form = new FormData();
+            form.append("firmware", fwFile);
+            form.append("keep_settings", "false");
+            try {
+              const r = await fetch(API+"/api/system/firmware", {method:"POST",body:form});
+              const d = await r.json();
+              if (d.status === "ready") {
+                setFwStatus("flashing");
+                showToast("Firmware validated! Flashing now — DO NOT UNPLUG. Router reboots in ~3 min.");
+              } else {
+                setFwStatus("error: "+(d.error||"unknown"));
+                showToast("Firmware rejected: "+(d.error||"unknown"));
+              }
+            } catch(e) { setFwStatus("error"); showToast("Upload failed"); }
+          }} sm v="d">{"\u26A1"} Flash Firmware</Bn>}
+        </div>
+        {fwStatus && <div style={{padding:"6px 10px",borderRadius:4,background:fwStatus.includes("error")?`${K.rd}08`:fwStatus==="flashing"?`${K.am}08`:`${K.cy}08`,border:`1px solid ${fwStatus.includes("error")?K.rd:fwStatus==="flashing"?K.am:K.cy}18`,fontSize:9,color:fwStatus.includes("error")?K.rd:fwStatus==="flashing"?K.am:K.cy}}>
+          {fwStatus==="uploading"&&"Uploading..."}
+          {fwStatus==="flashing"&&<><Dot c={K.am} p/> Flashing firmware — router will reboot. Wait 3-5 minutes then reconnect.</>}
+          {fwStatus.includes("error")&&fwStatus}
+        </div>}
+      </Bx>
+      {/* Reboot */}
+      <Bx>
+        <Lb>Router Control</Lb>
+        {!rebootConfirm ? <Bn fn={() => setRebootConfirm(true)} v="d">Reboot Router</Bn> :
+        <div>
+          <div style={{fontSize:11,color:K.rd,marginBottom:8}}>Are you sure? Router will go offline for ~60 seconds.</div>
+          <Rw s={{gap:6}}>
+            <Bn fn={async () => { await api("/system/reboot","POST"); showToast("Rebooting..."); setRebootConfirm(false); }} v="d">Yes, Reboot Now</Bn>
+            <Bn fn={() => setRebootConfirm(false)} v="g">Cancel</Bn>
+          </Rw>
+        </div>}
+      </Bx>
+    </div>;
+  };
+
+  const pages={dash:Dash,recon:Recon,targets:Targets,mitm:MitmPg,twin:TwinPg,portal:PortalPg,log:LogPg,net:NetPg,sys:SysPg,cfg:CfgPg};
   const Pg=pages[pg];
 
   return <div style={{display:"flex",flexDirection:"column",height:"100vh",background:K.bg,color:K.tx,fontFamily:K.f}}>
@@ -515,11 +763,11 @@ function Dashboard({ onLogout }) {
 
     {/* TOP BAR */}
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",background:K.sf,borderBottom:`1px solid ${K.bx}`,flexShrink:0}}>
-      <div style={{marginRight:4}}><div style={{fontSize:13,fontWeight:700,letterSpacing:5,color:K.cy}}>CERBERUS</div><div style={{fontSize:6,letterSpacing:2,color:K.dm}}>v0.2.0</div></div>
+      <div style={{marginRight:4}}><div style={{fontSize:13,fontWeight:700,letterSpacing:5,color:sideMode==="cerberus"?K.cy:K.bl}}>{sideMode==="cerberus"?"CERBERUS":"ROUTER"}</div><div style={{fontSize:6,letterSpacing:2,color:K.dm}}>{sideMode==="cerberus"?"Offensive Tools":"Management"}</div></div>
       <div style={{width:1,height:22,background:K.bx}}/>
-      <APDrop aps={aps} sel={tAP} onSel={setTAP}/>
+      {sideMode==="cerberus"&&<><APDrop aps={aps} sel={tAP} onSel={setTAP}/>
       <Bn fn={doRecon} dis={rcing} sm>{rcing?"\u27F3":"\uD83D\uDCE1"} RECON</Bn>
-      <Bn fn={doScan} dis={scing||!tAP} sm>{scing?"\u27F3":"\u26A1"} SCAN</Bn>
+      <Bn fn={doScan} dis={scing||!tAP} sm>{scing?"\u27F3":"\u26A1"} SCAN</Bn></>}
       <div style={{flex:1}}/>
       <Rw><Dot c={K.gn} p/><span style={{fontSize:8,color:K.dm}}>Online</span></Rw>
       <div onClick={onLogout} style={{cursor:"pointer",fontSize:9,color:K.dm,padding:"4px 10px",borderRadius:4,border:`1px solid ${K.bx}`,transition:"all 0.25s"}} onMouseOver={e=>e.target.style.color=K.rd} onMouseOut={e=>e.target.style.color=K.dm}>{"\u23FB"}</div>
@@ -528,7 +776,20 @@ function Dashboard({ onLogout }) {
     <div style={{display:"flex",flex:1,overflow:"hidden"}}>
       {/* SIDEBAR */}
       <div style={{width:140,background:K.sf,borderRight:`1px solid ${K.bx}`,padding:"8px 0",display:"flex",flexDirection:"column",flexShrink:0}}>
-        {NAV.map((n,i) => { const a=pg===n.id; return <div key={n.id} onClick={() => setPg(n.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"7px 12px",cursor:"pointer",fontSize:10,fontWeight:a?600:400,color:a?K.cy:K.dm,background:a?`${K.cy}05`:"transparent",borderLeft:a?`2px solid ${K.cy}`:"2px solid transparent",transition:"all 0.25s"}}><span style={{fontSize:11,width:15,textAlign:"center"}}>{n.ic}</span>{n.l}</div>; })}
+        {/* Mode Switcher */}
+        <div style={{padding:"0 8px",marginBottom:10}}>
+          <div onClick={() => { setSideMode("cerberus"); setPg("dash"); }} style={{padding:"8px 10px",borderRadius:6,cursor:"pointer",background:sideMode==="cerberus"?`${K.cy}08`:"transparent",border:sideMode==="cerberus"?`1px solid ${K.cy}20`:`1px solid transparent`,marginBottom:4,transition:"all 0.25s"}}>
+            <div style={{fontSize:10,fontWeight:700,color:sideMode==="cerberus"?K.cy:K.dm,letterSpacing:2}}>{"\uD83D\uDC15"} CERBERUS</div>
+            <div style={{fontSize:7,color:K.dm,marginTop:2}}>Offensive Tools</div>
+          </div>
+          <div onClick={() => { setSideMode("router"); setPg("net"); }} style={{padding:"8px 10px",borderRadius:6,cursor:"pointer",background:sideMode==="router"?`${K.bl}08`:"transparent",border:sideMode==="router"?`1px solid ${K.bl}20`:`1px solid transparent`,transition:"all 0.25s"}}>
+            <div style={{fontSize:10,fontWeight:700,color:sideMode==="router"?K.bl:K.dm,letterSpacing:2}}>{"\uD83C\uDF10"} ROUTER</div>
+            <div style={{fontSize:7,color:K.dm,marginTop:2}}>Management</div>
+          </div>
+        </div>
+        <div style={{borderBottom:`1px solid ${K.bx}`,margin:"0 12px 8px"}}/>
+        {/* Nav Items */}
+        {(sideMode==="cerberus"?NAV_CERBERUS:NAV_ROUTER).map((n,i) => { const a=pg===n.id; return <div key={n.id} onClick={() => setPg(n.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"7px 12px",cursor:"pointer",fontSize:10,fontWeight:a?600:400,color:a?(sideMode==="cerberus"?K.cy:K.bl):K.dm,background:a?(sideMode==="cerberus"?`${K.cy}05`:`${K.bl}05`):"transparent",borderLeft:a?`2px solid ${sideMode==="cerberus"?K.cy:K.bl}`:"2px solid transparent",transition:"all 0.25s"}}><span style={{fontSize:11,width:15,textAlign:"center"}}>{n.ic}</span>{n.l}</div>; })}
       </div>
 
       {/* MAIN */}
