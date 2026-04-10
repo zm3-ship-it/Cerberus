@@ -1,0 +1,4 @@
+dist/
+cerberus-release.tar.gz
+*.cap
+.DS_Store
