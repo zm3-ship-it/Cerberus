@@ -406,17 +406,6 @@ func (m *Manager) GetInterfaces() []InterfaceStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var ifaces []InterfaceStatus
-
-	out, err := exec.Command("ip", "-j", "addr", "show").Output()
-	if err != nil {
-		// Fallback to non-JSON
-		return m.getInterfacesFallback()
-	}
-
-	// Parse JSON output from ip command
-	// For simplicity, use the text-based fallback
-	_ = out
 	return m.getInterfacesFallback()
 }
 
