@@ -30,14 +30,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
-            python3-distutils python3-setuptools rsync swig unzip zlib1g-dev \
-            file wget libelf-dev
+            python3-setuptools rsync swig unzip zlib1g-dev file wget libelf-dev
 
-      - name: Cross-compile Cerberus backend
+      - name: Cross-compile Cerberus
         run: |
           cd backend
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../firmware/output/cerberus .
-          echo "✓ Backend compiled"
 
       - name: Bundle frontend
         run: |
@@ -48,41 +46,58 @@ jobs:
           curl -sL "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" -o firmware/output/www/react.production.min.js
           curl -sL "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" -o firmware/output/www/react-dom.production.min.js
           curl -sL "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js" -o firmware/output/www/babel.min.js
-          echo "✓ Frontend bundled"
 
       - name: Clone OpenWrt
         run: |
           cd firmware
           git clone --depth 1 --branch v25.12.0 https://github.com/openwrt/openwrt.git openwrt
           cd openwrt
+          sed -i '/telephony/d' feeds.conf.default
+          sed -i '/video/d' feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure OpenWrt for GL-MT3000
+      - name: Stage files and configure
         run: |
           cd firmware/openwrt
           
-          # Install Cerberus package
-          mkdir -p package/cerberus/files
-          cp ../package/cerberus/Makefile package/cerberus/
-          cp ../package/cerberus/files/cerberus.init package/cerberus/files/
-          mkdir -p build_dir/cerberus
-          cp ../output/cerberus build_dir/cerberus/
-          cp -r ../output/www build_dir/cerberus/
-          
-          # Custom filesystem overlay (banner, hostname, password)
+          # Create filesystem overlay
+          mkdir -p files/usr/bin files/www/cerberus files/etc/init.d
           mkdir -p files/etc/uci-defaults files/etc/config
+          mkdir -p files/etc/cerberus files/var/cerberus/captures
+          
+          # Binary + frontend
+          cp ../output/cerberus files/usr/bin/cerberus
+          chmod +x files/usr/bin/cerberus
+          cp ../output/www/* files/www/cerberus/
+          
+          # Init script
+          cp ../package/cerberus/files/cerberus.init files/etc/init.d/cerberus
+          chmod +x files/etc/init.d/cerberus
+          
+          # Banner + config
           cp ../files/etc/banner files/etc/banner
-          cp ../files/etc/uci-defaults/99-cerberus files/etc/uci-defaults/99-cerberus
           cp ../files/etc/config/system files/etc/config/system
+          
+          # First-boot
+          cat > files/etc/uci-defaults/99-cerberus << 'EOF'
+          #!/bin/sh
+          echo -e "toor\ntoor" | passwd root
+          uci set system.@system[0].hostname='Cerberus'
+          uci commit system
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+          /etc/init.d/cerberus enable 2>/dev/null
+          exit 0
+          EOF
           chmod +x files/etc/uci-defaults/99-cerberus
           
           # Config
           cat > .config << 'EOF'
           CONFIG_TARGET_mediatek=y
           CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_MULTI_PROFILE=y
+          CONFIG_TARGET_PER_DEVICE_ROOTFS=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y
-          CONFIG_PACKAGE_cerberus=y
           CONFIG_PACKAGE_aircrack-ng=y
           CONFIG_PACKAGE_tcpdump=y
           CONFIG_PACKAGE_nmap=y
@@ -91,32 +106,31 @@ jobs:
           CONFIG_PACKAGE_kmod-usb-core=y
           CONFIG_PACKAGE_kmod-usb3=y
           CONFIG_PACKAGE_kmod-mac80211=y
-          CONFIG_PACKAGE_kmod-rtl8812au-ct=y
-          CONFIG_PACKAGE_openssh-sftp-server=y
           CONFIG_PACKAGE_iwinfo=y
           CONFIG_PACKAGE_ethtool=y
+          CONFIG_PACKAGE_openssh-sftp-server=y
+          CONFIG_PACKAGE_arp-scan=y
           EOF
           
           make defconfig
           sed -i 's/# CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000 is not set/CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y/' .config
-          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_glinet_gl-mt3000=y" >> .config
           make defconfig
 
       - name: Build firmware
         run: |
           cd firmware/openwrt
           make -j$(nproc) V=s || make -j1 V=s
-          echo "✓ Firmware built"
 
       - name: Package output
         run: |
           cd firmware/openwrt
-          FWFILE=$(find bin/targets/mediatek/filogic/ -name "*gl-mt3000*sysupgrade*" -not -name "*.sha256" | head -1)
+          FWFILE=$(find bin/targets/mediatek/filogic/ -name "*gl-mt3000*squashfs-sysupgrade*" | head -1)
           if [ -n "$FWFILE" ]; then
             cp "$FWFILE" ../../cerberus-firmware-gl-mt3000.bin
             echo "✓ Firmware: $(du -h ../../cerberus-firmware-gl-mt3000.bin | cut -f1)"
           else
-            echo "Build failed - no sysupgrade image found"
+            echo "No sysupgrade image found"
+            ls -la bin/targets/mediatek/filogic/ || true
             exit 1
           fi
 
@@ -134,21 +148,8 @@ jobs:
           body: |
             ## Cerberus Firmware ${{ github.ref_name }}
             
-            **Flashable firmware for GL.iNet GL-MT3000 (Beryl AX)**
+            Flashable firmware for GL.iNet GL-MT3000. Everything baked in.
             
-            Cerberus + OpenWrt 25.12.0 in one image. All tools pre-installed.
+            **Flash:** `scp cerberus-firmware-gl-mt3000.bin root@192.168.1.1:/tmp/fw.bin && ssh root@192.168.1.1 "sysupgrade -n /tmp/fw.bin"`
             
-            ### Flash via SSH (if already on OpenWrt):
-            ```
-            scp cerberus-firmware-gl-mt3000.bin root@192.168.1.1:/tmp/
-            ssh root@192.168.1.1 "sysupgrade -n /tmp/cerberus-firmware-gl-mt3000.bin"
-            ```
-            
-            ### Flash via U-Boot (from any state):
-            1. Hold Reset button while powering on for 10 seconds
-            2. Connect ethernet to LAN port
-            3. Set your IP to 192.168.1.2
-            4. Browse to http://192.168.1.1
-            5. Upload this .bin file
-            
-            Dashboard: `http://192.168.1.1:1471`
+            **After flash:** SSH `root@192.168.1.1` password `toor` | Dashboard `http://192.168.1.1:1471`
