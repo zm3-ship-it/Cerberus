@@ -142,7 +142,13 @@ CONFIG_PACKAGE_dropbear=y
 DEFCONFIG
 
 make defconfig
+
+# Copy custom filesystem overlay (banner, hostname, password, etc.)
+cp -r "${CERBERUS_DIR}/firmware/files" ./files/
+chmod +x ./files/etc/uci-defaults/99-cerberus
+
 echo -e "${G}  ✓ Config generated for GL-MT3000${N}"
+echo -e "${G}  ✓ Custom files overlay applied (hostname=Cerberus, password=toor)${N}"
 
 # ─── Step 7: Build ───
 echo -e "${C}[7/7]${N} Building firmware (this takes 30-90 minutes)..."
@@ -150,7 +156,7 @@ echo "     Cores: $(nproc)"
 echo "     Output: bin/targets/mediatek/filogic/"
 echo ""
 
-make -j$(nproc) V=s 2>&1 | tee "${OUTPUT_DIR}/build.log"
+make -j$(nproc) FILES=files/ V=s 2>&1 | tee "${OUTPUT_DIR}/build.log"
 
 # Copy output
 FWFILE=$(find bin/targets/mediatek/filogic/ -name "*gl-mt3000*sysupgrade*" -not -name "*.sha256" | head -1)

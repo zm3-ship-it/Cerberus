@@ -1,101 +1,216 @@
 # 🐕 CERBERUS
 
-**Network Control System** — WiFi Pineapple-grade offensive network toolkit running on a $70 router.
+**Custom router firmware with built-in offensive network toolkit and full router management.**
+
+One flash. Everything works. No setup needed.
 
 ![Go](https://img.shields.io/badge/Go-1.22-00ADD8)
 ![Platform](https://img.shields.io/badge/platform-GL--MT3000-ff4757)
+![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.0-blue)
+
+---
+
+## ⚠️ Disclaimer
+
+**This software is provided for educational and authorized security testing purposes only.**
+
+The author(s) are **not responsible** for any misuse, damage, or illegal activity caused by this software. By using Cerberus, **you accept full responsibility** for your actions. Unauthorized network interception is **illegal** in most jurisdictions.
+
+**Use at your own risk.**
+
+---
+
+## What Is This?
+
+Cerberus is a custom firmware for the GL.iNet GL-MT3000 router (~$70) that combines:
+
+- **Offensive WiFi toolkit** — network recon, MITM, deauth, handshake capture, evil twin, captive portal, DNS spoofing
+- **Full router management** — WAN/LAN/WiFi config, DHCP, firmware updates, system monitoring
+- **Modern dashboard** — dark themed web UI at `http://192.168.1.1:1471`
+
+Two modes in the sidebar:
+- **🐕 CERBERUS** — Offensive tools (cyan)
+- **🌐 ROUTER** — Management (blue)
+
+Default credentials: `root` / `toor`
 
 ---
 
 ## Features
 
+### Offensive (Cerberus Mode)
 | Feature | Description |
 |---------|-------------|
-| **Network Recon** | Discover APs, clients, signal strength, probe requests |
-| **Per-Device MITM** | ARP spoof specific targets, intercept DNS in real-time |
-| **Deauth** | Kick individual devices off any network |
-| **Handshake Capture** | Grab WPA 4-way handshakes, download .cap files |
-| **Evil Twin** | Clone any AP with one click |
-| **Captive Portal** | Credential harvesting (Google, Facebook, WiFi templates) |
-| **DNS Logging** | 5000-line buffer with pass/block filters and domain search |
-| **DoH/DoT Blocking** | Force plaintext DNS by blocking encrypted resolvers |
-| **Modern Dashboard** | Dark theme, real-time updates, mobile-friendly |
-| **Hashed Auth** | SHA-256 passwords, persistent sessions |
+| Network Recon | Discover nearby APs, clients, signal strength, probe requests |
+| Per-Device MITM | ARP spoof specific targets, intercept DNS in real-time |
+| Deauth | Kick individual devices off any network |
+| Handshake Capture | Grab WPA 4-way handshakes with targeted client deauth, download .cap files |
+| Evil Twin | Clone any AP with one click |
+| Captive Portal | Credential harvesting (Google, Facebook, WiFi, Hotel templates) |
+| DNS Spoofing | Redirect any domain to a custom IP |
+| DNS Logging | 5000-line buffer with pass/block/domain filters |
+| DoH/DoT Blocking | Force plaintext DNS by blocking encrypted resolvers |
+
+### Router Management (Router Mode)
+| Feature | Description |
+|---------|-------------|
+| WAN Config | DHCP, Static IP, PPPoE with DNS settings |
+| LAN Config | IP, subnet, DHCP server toggle with range/lease |
+| WiFi Config | Per-radio SSID, password, encryption, channel, enable/disable |
+| Interface Status | All interfaces with IP, MAC, speed, up/down |
+| DHCP Leases | Active leases with hostname, IP, MAC |
+| System Info | Hostname, uptime, firmware, kernel, CPU, RAM, disk with live gauges |
+| Firmware Flash | Upload .bin to flash new firmware from the dashboard |
+| Reboot | One-click with confirmation |
+| Adapter Roles | Assign WiFi adapters to scan/attack/upstream roles |
 
 ---
 
 ## Hardware
 
-| Part | Price | Notes |
-|------|-------|-------|
-| GL.iNet GL-MT3000 (Beryl AX) | ~$70 | Runs OpenWrt natively, USB 3.0 |
-| Alfa AWUS036ACH | ~$35 | Monitor mode + injection, dual band |
-| USB Hub (optional) | ~$10 | If running 2 adapters |
+| Part | Price | Required? |
+|------|-------|-----------|
+| GL.iNet GL-MT3000 (Beryl AX) | ~$70 | Yes |
+| Alfa AWUS036ACH or Panda PAU09 | $20-35 | Optional — needed for deauth, evil twin, handshake capture |
+| USB Hub | ~$10 | Only if running 2 adapters |
 
-**Minimum:** Router only ($70) — gets you MITM, DNS logging, DoH blocking.
-**Recommended:** Router + 1 Alfa ($105) — adds deauth, handshake capture, evil twin.
+**Without an adapter:** Recon, MITM, DNS logging, DNS spoofing, all router management features work using the built-in radio.
 
----
-
-## Install (One Command)
-
-### Option 1: Download Release
-
-Go to [Releases](../../releases), download the latest `cerberus-release.tar.gz`.
-
-```bash
-tar -xzf cerberus-release.tar.gz
-./install.sh 192.168.1.1
-```
-
-That's it. Dashboard at `http://192.168.1.1:1471`.
-
-### Option 2: Build from Source
-
-```bash
-git clone https://github.com/YOUR_USERNAME/cerberus.git
-cd cerberus
-make install ROUTER=192.168.1.1
-```
-
-### Option 3: Fork & Auto-Build
-
-1. Fork this repo
-2. Push a tag: `git tag v0.1.0 && git push --tags`
-3. GitHub Actions builds everything automatically
-4. Download from Releases tab
-5. `./install.sh 192.168.1.1`
+**With an adapter:** Adds deauth, handshake capture, evil twin, captive portal.
 
 ---
 
-## Prerequisites
+## Install
 
-Your GL-MT3000 must be running **OpenWrt** (not stock GL.iNet firmware).
+### Option 1: Flash the Firmware (Recommended)
 
-### Flash OpenWrt
+Download `cerberus-firmware-gl-mt3000.bin` from the [Releases](../../releases) page.
 
-1. Download OpenWrt for GL-MT3000 from [openwrt.org](https://openwrt.org/toh/gl.inet/gl-mt3000)
-2. Connect to router via ethernet, go to `http://192.168.8.1`
-3. **System → Upgrade → Local Upgrade**
-4. Uncheck "Keep Settings", upload the .bin
-5. Wait 2-3 minutes, router reboots into OpenWrt at `http://192.168.1.1`
+**If already on OpenWrt:**
+```bash
+scp cerberus-firmware-gl-mt3000.bin root@192.168.1.1:/tmp/
+ssh root@192.168.1.1 "sysupgrade -n /tmp/cerberus-firmware-gl-mt3000.bin"
+```
 
-If you brick it — hold Reset while powering on for 10 seconds. Go to `http://192.168.1.1` to access U-Boot recovery.
+**If on stock GL.iNet firmware:**
+```bash
+ssh root@192.168.8.1
+cd /tmp
+wget [URL to .bin from Releases]
+sysupgrade -n /tmp/cerberus-firmware-gl-mt3000.bin
+```
+
+**From bricked/any state (U-Boot):**
+1. Hold Reset button while powering on for 10 seconds
+2. Connect ethernet to LAN port
+3. Set your PC IP to `192.168.1.2`
+4. Browse to `http://192.168.1.1`
+5. Upload the .bin file
+
+After flash, wait 3-5 minutes. Then:
+- **Dashboard:** `http://192.168.1.1:1471` — login with `root` / `toor`
+- **SSH:** `ssh root@192.168.1.1` — password `toor`
+
+```
+root@Cerberus:~#
+```
+
+### Option 2: Install on Existing OpenWrt
+
+If you already have OpenWrt running and don't want to reflash:
+
+Download `cerberus-release.tar.gz` from [Releases](../../releases). Extract it, then:
+
+```bash
+# Upload binary (from the router, not Windows PowerShell)
+cd /tmp
+wget [URL to cerberus binary from Releases]
+chmod +x cerberus
+mv cerberus /usr/bin/cerberus
+
+# Upload frontend (from your PC)
+# PowerShell breaks binaries — use this for text files only:
+cat www/index.html | ssh root@192.168.1.1 "mkdir -p /www/cerberus && cat > /www/cerberus/index.html"
+cat www/cerberus-dashboard.jsx | ssh root@192.168.1.1 "cat > /www/cerberus/cerberus-dashboard.jsx"
+cat www/cerberus-api.js | ssh root@192.168.1.1 "cat > /www/cerberus/cerberus-api.js"
+cat www/react.production.min.js | ssh root@192.168.1.1 "cat > /www/cerberus/react.production.min.js"
+cat www/react-dom.production.min.js | ssh root@192.168.1.1 "cat > /www/cerberus/react-dom.production.min.js"
+cat www/babel.min.js | ssh root@192.168.1.1 "cat > /www/cerberus/babel.min.js"
+
+# SSH into router and finish
+ssh root@192.168.1.1
+mkdir -p /var/cerberus/captures
+
+cat > /etc/init.d/cerberus << 'EOF'
+#!/bin/sh /etc/rc.common
+START=99
+STOP=10
+start() { /usr/bin/cerberus > /var/log/cerberus.log 2>&1 & }
+stop() { killall cerberus 2>/dev/null; }
+restart() { stop; sleep 1; start; }
+EOF
+
+chmod +x /etc/init.d/cerberus
+/etc/init.d/cerberus enable
+/etc/init.d/cerberus start
+```
+
+Dashboard at `http://192.168.1.1:1471`
+
+> **Note:** On Windows, never use PowerShell's `cat` to upload binary files (like the `cerberus` executable). It corrupts them. Always download binaries directly on the router with `wget`.
 
 ---
 
 ## Usage
 
+1. Open `http://192.168.1.1:1471`
+2. Login with `root` / `toor` (change in Settings)
+3. Switch between **Cerberus** (offensive) and **Router** (management) in the sidebar
+
+### Offensive Workflow
+1. Hit **RECON** — discovers nearby APs
+2. Select target AP from dropdown
+3. Hit **SCAN** — finds clients
+4. Go to **Targets** — toggle MITM/Deauth per device
+5. Check **Logging** for DNS queries
+6. Use **MITM** page for DNS spoofing rules
+7. Use **Recon** for handshake capture (select client to deauth)
+8. Launch **Evil Twin** + **Captive Portal** for credential harvesting
+
+### Router Management
+1. Switch to **Router** mode in sidebar
+2. **Network** — configure WAN, LAN, WiFi, view DHCP leases
+3. **System** — monitor resources, flash firmware, reboot
+
+---
+
+## Building
+
+### App Only (Go binary + frontend)
+
+Automatically built by GitHub Actions on every tagged push:
+
+```bash
+git tag Release-vX && git push --tags
 ```
-1. Open http://192.168.1.1:1471
-2. Create account (first visit) or login
-3. Hit RECON — discovers nearby APs
-4. Select target AP from dropdown
-5. Hit SCAN — finds clients on that AP
-6. Toggle MITM / Deauth per device
-7. View DNS logs with filters
-8. Capture WPA handshakes
-9. Launch Evil Twin + Captive Portal
+
+Download from Releases tab. Binary is cross-compiled for ARM64 (GL-MT3000).
+
+### Full Firmware (.bin)
+
+Builds a complete flashable firmware image with Cerberus baked in:
+
+```bash
+git tag fw-vX && git push --tags
+```
+
+Or: **Actions** → **Build Firmware** → **Run workflow**
+
+Takes ~2 hours (compiling entire Linux OS from source). Output is a `.bin` file ready to flash.
+
+**Local build** (needs Linux + 20GB disk):
+```bash
+cd firmware && chmod +x build.sh && ./build.sh
 ```
 
 ---
@@ -104,25 +219,35 @@ If you brick it — hold Reset while powering on for 10 seconds. Go to `http://1
 
 ```
 cerberus/
-├── .github/workflows/build.yml    # CI/CD
+├── .github/workflows/
+│   ├── build.yml              # CI: app binary + frontend
+│   └── firmware.yml           # CI: full firmware image
 ├── backend/
-│   ├── main.go                    # Entry point
-│   ├── go.mod
-│   ├── scanner/scanner.go         # ARP scan, airodump, probes
-│   ├── mitm/mitm.go              # Per-target ARP spoof + DNS
-│   ├── deauth/deauth.go          # Per-target deauth
-│   ├── eviltwin/eviltwin.go      # Rogue AP via hostapd
-│   ├── captive/captive.go        # Phishing portal
-│   ├── handshake/handshake.go    # WPA capture + download
-│   ├── adapters/adapters.go      # Interface detection + roles
-│   └── api/routes.go             # REST API
+│   ├── main.go                # Entry point
+│   ├── scanner/               # Network discovery (iwinfo + arp-scan)
+│   ├── mitm/                  # ARP spoof + DNS capture
+│   ├── deauth/                # WiFi deauthentication
+│   ├── eviltwin/              # Rogue access point
+│   ├── captive/               # Phishing portal
+│   ├── handshake/             # WPA handshake capture
+│   ├── adapters/              # Wireless adapter management
+│   ├── system/                # System info, reboot, firmware flash
+│   ├── network/               # WAN/LAN/WiFi/DHCP via UCI
+│   └── api/                   # 40+ REST endpoints
 ├── frontend/
-│   ├── index.html
-│   ├── cerberus-dashboard.jsx    # Full React dashboard
-│   └── cerberus-api.js           # API client
+│   ├── index.html             # Loads React locally (no CDN)
+│   ├── cerberus-dashboard.jsx # Full dashboard (~800 lines)
+│   └── cerberus-api.js        # API client library
+├── firmware/
+│   ├── build.sh               # Local firmware build script
+│   ├── files/                 # Filesystem overlay (banner, hostname, password)
+│   └── package/cerberus/      # OpenWrt package definition
+├── scripts/
+│   ├── install.sh             # One-command deploy script
+│   └── cerberus.init          # OpenWrt service script
+├── docs/SETUP.md              # Detailed hardware setup guide
+├── LICENSE                    # Source-Available (non-commercial)
 ├── Makefile
-├── docs/
-│   └── SETUP.md                  # Detailed setup guide
 └── README.md
 ```
 
@@ -130,38 +255,94 @@ cerberus/
 
 ## API
 
-All endpoints return JSON. CORS enabled.
+All endpoints return JSON. Port 1471.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/scan` | Start network scan |
-| GET | `/api/clients` | List discovered clients |
-| GET | `/api/networks` | List discovered APs |
-| GET | `/api/probes` | List probe requests |
-| POST | `/api/mitm/start` | Start MITM on target |
-| POST | `/api/mitm/stop` | Stop MITM on target |
-| GET | `/api/mitm/dns` | Get DNS query log |
-| POST | `/api/deauth/start` | Start deauth on target |
-| POST | `/api/deauth/stop` | Stop deauth on target |
-| POST | `/api/eviltwin/start` | Launch evil twin |
-| POST | `/api/eviltwin/stop` | Stop evil twin |
-| POST | `/api/captive/start` | Start captive portal |
-| GET | `/api/captive/creds` | Get captured credentials |
-| POST | `/api/handshake/start` | Start handshake capture |
-| GET | `/api/handshake/status` | Capture status |
-| GET | `/api/handshake/download/:file` | Download .cap file |
-| GET | `/api/adapters` | List wireless adapters |
-| POST | `/api/adapters/role` | Assign adapter role |
-| GET | `/api/status` | System status |
+<details>
+<summary>Full API Reference (click to expand)</summary>
 
----
+### Scanner
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/scan | Start network scan |
+| GET | /api/clients | Discovered clients |
+| GET | /api/networks | Discovered APs |
+| GET | /api/probes | Probe requests |
 
-## Disclaimer
+### MITM
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/mitm/start | Start `{mac, ip}` |
+| POST | /api/mitm/stop | Stop `{mac}` |
+| GET | /api/mitm/targets | Active targets |
+| GET | /api/mitm/dns | DNS query log |
 
-For authorized testing and parental monitoring only. You are responsible for complying with local laws.
+### DNS Spoofing
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/dns/spoof | Current spoof rules |
+| POST | /api/dns/spoof | Set rules `{rules:[{domain,ip}]}` |
+
+### Deauth
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/deauth/start | Start `{mac, bssid}` |
+| POST | /api/deauth/stop | Stop `{mac}` |
+| GET | /api/deauth/targets | Active targets |
+
+### Evil Twin
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/eviltwin/start | Launch `{ssid, channel, iface}` |
+| POST | /api/eviltwin/stop | Stop |
+| GET | /api/eviltwin/status | Status |
+
+### Captive Portal
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/captive/start | Launch `{template}` |
+| POST | /api/captive/stop | Stop |
+| GET | /api/captive/creds | Captured credentials |
+
+### Handshake
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/handshake/start | Capture `{bssid, ssid, channel, client}` |
+| POST | /api/handshake/stop | Stop |
+| GET | /api/handshake/status | Status |
+| GET | /api/handshake/captures | List .cap files |
+| GET | /api/handshake/download/:file | Download .cap |
+
+### System
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/system/info | System info |
+| POST | /api/system/reboot | Reboot |
+| POST | /api/system/hostname | Set hostname |
+| POST | /api/system/firmware | Flash firmware (multipart) |
+
+### Network
+| Method | Path | Description |
+|--------|------|-------------|
+| GET/POST | /api/network/wan | WAN config |
+| GET/POST | /api/network/lan | LAN config |
+| GET/POST | /api/network/wifi | WiFi config |
+| GET | /api/network/interfaces | Interface status |
+| GET | /api/network/dhcp/leases | DHCP leases |
+| GET/POST/DELETE | /api/network/dhcp/static | Static leases |
+
+### Adapters
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/adapters | List adapters |
+| POST | /api/adapters/role | Assign role |
+| POST | /api/adapters/detect | Re-detect |
+
+</details>
 
 ---
 
 ## License
 
 Cerberus Source-Available License v1.0 — see [LICENSE](LICENSE)
+
+Non-commercial use only. Attribution required. See LICENSE for full terms.
