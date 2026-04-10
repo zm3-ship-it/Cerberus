@@ -143,9 +143,13 @@ DEFCONFIG
 
 make defconfig
 
-# Copy custom filesystem overlay (banner, hostname, password, etc.)
-cp -r "${CERBERUS_DIR}/firmware/files" ./files/
-chmod +x ./files/etc/uci-defaults/99-cerberus
+# Copy custom filesystem overlay into the OpenWrt tree
+# OpenWrt automatically includes anything in the 'files' directory at root
+mkdir -p files/etc/uci-defaults files/etc/config
+cp "${CERBERUS_DIR}/firmware/files/etc/banner" files/etc/banner
+cp "${CERBERUS_DIR}/firmware/files/etc/uci-defaults/99-cerberus" files/etc/uci-defaults/99-cerberus
+cp "${CERBERUS_DIR}/firmware/files/etc/config/system" files/etc/config/system
+chmod +x files/etc/uci-defaults/99-cerberus
 
 echo -e "${G}  ✓ Config generated for GL-MT3000${N}"
 echo -e "${G}  ✓ Custom files overlay applied (hostname=Cerberus, password=toor)${N}"
@@ -156,7 +160,7 @@ echo "     Cores: $(nproc)"
 echo "     Output: bin/targets/mediatek/filogic/"
 echo ""
 
-make -j$(nproc) FILES=files/ V=s 2>&1 | tee "${OUTPUT_DIR}/build.log"
+make -j$(nproc) V=s 2>&1 | tee "${OUTPUT_DIR}/build.log"
 
 # Copy output
 FWFILE=$(find bin/targets/mediatek/filogic/ -name "*gl-mt3000*sysupgrade*" -not -name "*.sha256" | head -1)
