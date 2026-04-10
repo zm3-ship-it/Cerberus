@@ -70,6 +70,10 @@ jobs:
           cp ../output/cerberus build_dir/cerberus/
           cp -r ../output/www build_dir/cerberus/
           
+          # Custom filesystem overlay (banner, hostname, password)
+          cp -r ../files ./files/
+          chmod +x ./files/etc/uci-defaults/99-cerberus
+          
           # Config
           cat > .config << 'EOF'
           CONFIG_TARGET_mediatek=y
@@ -95,7 +99,7 @@ jobs:
       - name: Build firmware
         run: |
           cd firmware/openwrt
-          make -j$(nproc) V=s || make -j1 V=s
+          make -j$(nproc) FILES=files/ V=s || make -j1 FILES=files/ V=s
           echo "✓ Firmware built"
 
       - name: Package output
