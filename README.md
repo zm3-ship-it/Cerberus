@@ -1,22 +1,10 @@
 # 🐕 CERBERUS
 
-**Network Control System** — Open-source offensive network toolkit running on a $70 travel router.
+**Network Control System** — WiFi Pineapple-grade offensive network toolkit running on a $70 router.
 
 ![License](https://img.shields.io/badge/license-MIT-00ffc8)
 ![Go](https://img.shields.io/badge/Go-1.22-00ADD8)
 ![Platform](https://img.shields.io/badge/platform-GL--MT3000-ff4757)
-
----
-
-## ⚠️ Disclaimer
-
-**This software is provided for educational and authorized security testing purposes only.**
-
-The author(s) of this project are **not responsible** for any misuse, damage, or illegal activity caused by this software. By downloading, installing, or using Cerberus, **you accept full responsibility** for your actions.
-
-It is your obligation to comply with all applicable local, state, federal, and international laws. Unauthorized interception of network traffic, unauthorized access to computer systems, and deploying rogue access points on networks you do not own or have explicit written permission to test is **illegal** in most jurisdictions.
-
-**Use at your own risk. You have been warned.**
 
 ---
 
@@ -32,7 +20,6 @@ It is your obligation to comply with all applicable local, state, federal, and i
 | **Captive Portal** | Credential harvesting (Google, Facebook, WiFi templates) |
 | **DNS Logging** | 5000-line buffer with pass/block filters and domain search |
 | **DoH/DoT Blocking** | Force plaintext DNS by blocking encrypted resolvers |
-| **Router Management** | WAN/LAN/WiFi config, DHCP, firmware flash, reboot |
 | **Modern Dashboard** | Dark theme, real-time updates, mobile-friendly |
 | **Hashed Auth** | SHA-256 passwords, persistent sessions |
 
@@ -43,74 +30,73 @@ It is your obligation to comply with all applicable local, state, federal, and i
 | Part | Price | Notes |
 |------|-------|-------|
 | GL.iNet GL-MT3000 (Beryl AX) | ~$70 | Runs OpenWrt natively, USB 3.0 |
-| Alfa AWUS036ACH (or Panda PAU09) | ~$20-35 | Monitor mode + injection, dual band |
+| Alfa AWUS036ACH | ~$35 | Monitor mode + injection, dual band |
 | USB Hub (optional) | ~$10 | If running 2 adapters |
 
----
-
-## Quick Install
-
-### 1. Flash OpenWrt on GL-MT3000
-
-```bash
-ssh root@192.168.8.1
-cd /tmp
-wget https://downloads.openwrt.org/releases/25.12.0/targets/mediatek/filogic/openwrt-25.12.0-mediatek-filogic-glinet_gl-mt3000-squashfs-sysupgrade.bin
-sysupgrade -n /tmp/openwrt-25.12.0-mediatek-filogic-glinet_gl-mt3000-squashfs-sysupgrade.bin
-```
-
-### 2. Deploy Cerberus
-
-Download the latest release from the [Releases](../../releases) tab, then:
-
-```bash
-# Upload binary
-scp cerberus root@192.168.1.1:/usr/bin/cerberus
-
-# Upload frontend
-scp -r www/* root@192.168.1.1:/www/cerberus/
-
-# SSH in and finish setup
-ssh root@192.168.1.1
-
-chmod +x /usr/bin/cerberus
-mkdir -p /www/cerberus /var/cerberus/captures
-opkg update && opkg install aircrack-ng tcpdump dsniff nmap hostapd-common dnsmasq
-
-cat > /etc/init.d/cerberus << 'EOF'
-#!/bin/sh /etc/rc.common
-START=99
-STOP=10
-start() { /usr/bin/cerberus > /var/log/cerberus.log 2>&1 & }
-stop() { killall cerberus 2>/dev/null; }
-restart() { stop; sleep 1; start; }
-EOF
-
-chmod +x /etc/init.d/cerberus
-/etc/init.d/cerberus enable
-/etc/init.d/cerberus start
-```
-
-### 3. Open Dashboard
-
-`http://192.168.1.1:1471`
-
-First visit — create your account. Plug in your Alfa/Panda adapter for offensive features.
+**Minimum:** Router only ($70) — gets you MITM, DNS logging, DoH blocking.
+**Recommended:** Router + 1 Alfa ($105) — adds deauth, handshake capture, evil twin.
 
 ---
 
-## Build from Source
+## Install (One Command)
+
+### Option 1: Download Release
+
+Go to [Releases](../../releases), download the latest `cerberus-release.tar.gz`.
+
+```bash
+tar -xzf cerberus-release.tar.gz
+./install.sh 192.168.1.1
+```
+
+That's it. Dashboard at `http://192.168.1.1:1471`.
+
+### Option 2: Build from Source
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/cerberus.git
 cd cerberus
-make build
+make install ROUTER=192.168.1.1
 ```
 
-Or push a tag to trigger GitHub Actions auto-build:
+### Option 3: Fork & Auto-Build
 
-```bash
-git tag v0.1.0 && git push --tags
+1. Fork this repo
+2. Push a tag: `git tag v0.1.0 && git push --tags`
+3. GitHub Actions builds everything automatically
+4. Download from Releases tab
+5. `./install.sh 192.168.1.1`
+
+---
+
+## Prerequisites
+
+Your GL-MT3000 must be running **OpenWrt** (not stock GL.iNet firmware).
+
+### Flash OpenWrt
+
+1. Download OpenWrt for GL-MT3000 from [openwrt.org](https://openwrt.org/toh/gl.inet/gl-mt3000)
+2. Connect to router via ethernet, go to `http://192.168.8.1`
+3. **System → Upgrade → Local Upgrade**
+4. Uncheck "Keep Settings", upload the .bin
+5. Wait 2-3 minutes, router reboots into OpenWrt at `http://192.168.1.1`
+
+If you brick it — hold Reset while powering on for 10 seconds. Go to `http://192.168.1.1` to access U-Boot recovery.
+
+---
+
+## Usage
+
+```
+1. Open http://192.168.1.1:1471
+2. Create account (first visit) or login
+3. Hit RECON — discovers nearby APs
+4. Select target AP from dropdown
+5. Hit SCAN — finds clients on that AP
+6. Toggle MITM / Deauth per device
+7. View DNS logs with filters
+8. Capture WPA handshakes
+9. Launch Evil Twin + Captive Portal
 ```
 
 ---
@@ -119,24 +105,25 @@ git tag v0.1.0 && git push --tags
 
 ```
 cerberus/
+├── .github/workflows/build.yml    # CI/CD
 ├── backend/
-│   ├── main.go                 # Entry point
-│   ├── scanner/scanner.go      # Network discovery
-│   ├── mitm/mitm.go           # ARP spoof + DNS capture
-│   ├── deauth/deauth.go       # WiFi deauthentication
-│   ├── eviltwin/eviltwin.go   # Rogue access point
-│   ├── captive/captive.go     # Phishing portal
-│   ├── handshake/handshake.go # WPA handshake capture
-│   ├── adapters/adapters.go   # Wireless adapter management
-│   ├── system/system.go       # System info, reboot, firmware
-│   ├── network/network.go     # WAN/LAN/WiFi/DHCP via UCI
-│   └── api/routes.go          # 40+ REST endpoints
+│   ├── main.go                    # Entry point
+│   ├── go.mod
+│   ├── scanner/scanner.go         # ARP scan, airodump, probes
+│   ├── mitm/mitm.go              # Per-target ARP spoof + DNS
+│   ├── deauth/deauth.go          # Per-target deauth
+│   ├── eviltwin/eviltwin.go      # Rogue AP via hostapd
+│   ├── captive/captive.go        # Phishing portal
+│   ├── handshake/handshake.go    # WPA capture + download
+│   ├── adapters/adapters.go      # Interface detection + roles
+│   └── api/routes.go             # REST API
 ├── frontend/
 │   ├── index.html
-│   ├── cerberus-dashboard.jsx
-│   └── cerberus-api.js
-├── .github/workflows/build.yml
+│   ├── cerberus-dashboard.jsx    # Full React dashboard
+│   └── cerberus-api.js           # API client
 ├── Makefile
+├── docs/
+│   └── SETUP.md                  # Detailed setup guide
 └── README.md
 ```
 
@@ -144,86 +131,38 @@ cerberus/
 
 ## API
 
-All endpoints return JSON. CORS enabled. Port 1471.
+All endpoints return JSON. CORS enabled.
 
-<details>
-<summary>Full API Reference (click to expand)</summary>
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/scan` | Start network scan |
+| GET | `/api/clients` | List discovered clients |
+| GET | `/api/networks` | List discovered APs |
+| GET | `/api/probes` | List probe requests |
+| POST | `/api/mitm/start` | Start MITM on target |
+| POST | `/api/mitm/stop` | Stop MITM on target |
+| GET | `/api/mitm/dns` | Get DNS query log |
+| POST | `/api/deauth/start` | Start deauth on target |
+| POST | `/api/deauth/stop` | Stop deauth on target |
+| POST | `/api/eviltwin/start` | Launch evil twin |
+| POST | `/api/eviltwin/stop` | Stop evil twin |
+| POST | `/api/captive/start` | Start captive portal |
+| GET | `/api/captive/creds` | Get captured credentials |
+| POST | `/api/handshake/start` | Start handshake capture |
+| GET | `/api/handshake/status` | Capture status |
+| GET | `/api/handshake/download/:file` | Download .cap file |
+| GET | `/api/adapters` | List wireless adapters |
+| POST | `/api/adapters/role` | Assign adapter role |
+| GET | `/api/status` | System status |
 
-### Scanner
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/scan | Start network scan |
-| GET | /api/clients | List discovered clients |
-| GET | /api/networks | List discovered APs |
-| GET | /api/probes | List probe requests |
+---
 
-### MITM
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/mitm/start | Start MITM `{mac, ip}` |
-| POST | /api/mitm/stop | Stop MITM `{mac}` |
-| GET | /api/mitm/targets | Active targets |
-| GET | /api/mitm/dns | DNS query log |
+## Disclaimer
 
-### Deauth
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/deauth/start | Start `{mac, bssid}` |
-| POST | /api/deauth/stop | Stop `{mac}` |
-| GET | /api/deauth/targets | Active targets |
-
-### Evil Twin
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/eviltwin/start | Launch `{ssid, channel, iface}` |
-| POST | /api/eviltwin/stop | Stop |
-| GET | /api/eviltwin/status | Status |
-
-### Captive Portal
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/captive/start | Launch `{template}` |
-| POST | /api/captive/stop | Stop |
-| GET | /api/captive/creds | Captured credentials |
-
-### Handshake
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /api/handshake/start | Capture `{bssid, ssid, channel}` |
-| POST | /api/handshake/stop | Stop capture |
-| GET | /api/handshake/status | Capture status |
-| GET | /api/handshake/captures | List .cap files |
-| GET | /api/handshake/download/:file | Download .cap |
-
-### System
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/system/info | System info |
-| POST | /api/system/reboot | Reboot router |
-| POST | /api/system/hostname | Set hostname |
-| POST | /api/system/firmware | Flash firmware (multipart) |
-
-### Network
-| Method | Path | Description |
-|--------|------|-------------|
-| GET/POST | /api/network/wan | WAN config |
-| GET/POST | /api/network/lan | LAN config |
-| GET/POST | /api/network/wifi | WiFi config |
-| GET | /api/network/interfaces | Interface status |
-| GET | /api/network/dhcp/leases | DHCP leases |
-| GET/POST/DELETE | /api/network/dhcp/static | Static leases |
-
-### Adapters
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /api/adapters | List adapters |
-| POST | /api/adapters/role | Assign role `{adapter, role}` |
-| POST | /api/adapters/detect | Re-detect adapters |
-
-</details>
+For authorized testing and parental monitoring only. You are responsible for complying with local laws.
 
 ---
 
 ## License
 
-LGPL-2.0 — see [LICENSE](LICENSE)
+MIT
