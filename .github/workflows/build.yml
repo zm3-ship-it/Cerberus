@@ -56,6 +56,8 @@ jobs:
 
       - name: Resolve Go dependencies
         run: |
+          go get github.com/gopacket/gopacket@latest
+          go get github.com/mattn/go-sqlite3@latest
           go mod tidy
           go mod download
 
