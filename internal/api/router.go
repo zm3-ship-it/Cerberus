@@ -24,6 +24,7 @@ type Modules struct {
 	DNSLog     *dns.Logger
 	Devices    *devices.Tracker
 	DoHBlocker *dns.DoHBlocker
+	VPNBlocker *dns.VPNBlocker
 	Config     *config.Config
 	Scanner    *recon.Scanner
 	Deauth     *deauth.Manager
@@ -84,6 +85,15 @@ func NewRouter(m *Modules) http.Handler {
 	mux.HandleFunc("/api/captive/stop", handleCaptiveStop(m.Captive))
 	mux.HandleFunc("/api/captive/status", handleCaptiveStatus(m.Captive))
 	mux.HandleFunc("/api/captive/creds", handleCaptiveCreds(m.Captive))
+
+	// ── VPN Blocking ──────────────────────────────────────────
+	mux.HandleFunc("/api/vpn/status", handleVPNStatus(m.VPNBlocker))
+	mux.HandleFunc("/api/vpn/dns/enable", handleVPNDNSEnable(m.VPNBlocker))
+	mux.HandleFunc("/api/vpn/dns/disable", handleVPNDNSDisable(m.VPNBlocker))
+	mux.HandleFunc("/api/vpn/ports/enable", handleVPNPortsEnable(m.VPNBlocker))
+	mux.HandleFunc("/api/vpn/ports/disable", handleVPNPortsDisable(m.VPNBlocker))
+	mux.HandleFunc("/api/vpn/all/enable", handleVPNEnableAll(m.VPNBlocker))
+	mux.HandleFunc("/api/vpn/all/disable", handleVPNDisableAll(m.VPNBlocker))
 
 	// ── Static frontend ──────────────────────────────────────────
 	fs := http.FileServer(http.Dir("/www/cerberus"))
@@ -495,6 +505,62 @@ func handleCaptiveCreds(mgr *captive.Manager) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, 200, mgr.GetCreds())
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VPN BLOCKER HANDLERS
+// ═══════════════════════════════════════════════════════════════════
+
+func handleVPNStatus(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, v.Status()) }
+}
+
+func handleVPNDNSEnable(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { writeError(w, 405, "POST required"); return }
+		if err := v.EnableDNS(); err != nil { writeError(w, 500, err.Error()); return }
+		writeJSON(w, 200, map[string]string{"status": "dns blocking enabled"})
+	}
+}
+
+func handleVPNDNSDisable(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { writeError(w, 405, "POST required"); return }
+		if err := v.DisableDNS(); err != nil { writeError(w, 500, err.Error()); return }
+		writeJSON(w, 200, map[string]string{"status": "dns blocking disabled"})
+	}
+}
+
+func handleVPNPortsEnable(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { writeError(w, 405, "POST required"); return }
+		if err := v.EnablePorts(); err != nil { writeError(w, 500, err.Error()); return }
+		writeJSON(w, 200, map[string]string{"status": "port blocking enabled"})
+	}
+}
+
+func handleVPNPortsDisable(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { writeError(w, 405, "POST required"); return }
+		if err := v.DisablePorts(); err != nil { writeError(w, 500, err.Error()); return }
+		writeJSON(w, 200, map[string]string{"status": "port blocking disabled"})
+	}
+}
+
+func handleVPNEnableAll(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { writeError(w, 405, "POST required"); return }
+		if err := v.EnableAll(); err != nil { writeError(w, 500, err.Error()); return }
+		writeJSON(w, 200, map[string]string{"status": "all vpn blocking enabled"})
+	}
+}
+
+func handleVPNDisableAll(v *dns.VPNBlocker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost { writeError(w, 405, "POST required"); return }
+		v.DisableAll()
+		writeJSON(w, 200, map[string]string{"status": "all vpn blocking disabled"})
 	}
 }
 

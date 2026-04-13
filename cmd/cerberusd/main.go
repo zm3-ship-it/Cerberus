@@ -63,6 +63,8 @@ func main() {
 		}
 	}
 
+	vpnBlocker := dns.NewVPNBlocker()
+
 	go devTracker.ScanLoop(30 * time.Second)
 
 	// ── Attack modules ───────────────────────────────────────────
@@ -78,6 +80,7 @@ func main() {
 		DNSLog:     dnsLog,
 		Devices:    devTracker,
 		DoHBlocker: dohBlocker,
+		VPNBlocker: vpnBlocker,
 		Config:     cfg,
 		Scanner:    scanner,
 		Deauth:     deauthMgr,
@@ -117,6 +120,7 @@ func main() {
 	// Stop all attack modules cleanly
 	sniffer.Stop()
 	dohBlocker.Disable()
+	vpnBlocker.DisableAll()
 	deauthMgr.StopAll()
 	twinMgr.Stop()
 	shakeMgr.StopAll()
