@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type QueryRecord struct {
@@ -27,10 +27,13 @@ type Logger struct {
 }
 
 func NewLogger(dbPath string) (*Logger, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	// Set pragmas separately — modernc/sqlite DSN doesn't use query params
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
 
 	schema := `
 	CREATE TABLE IF NOT EXISTS dns_queries (

@@ -7,14 +7,14 @@ import (
 
 	"cerberus/internal/devices"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/afpacket"
+	"github.com/gopacket/gopacket/layers"
 )
 
 type Sniffer struct {
 	iface   string
-	handle  *pcap.Handle
+	handle  *afpacket.TPacket
 	logger  *Logger
 	tracker *devices.Tracker
 	stop    chan struct{}
@@ -22,14 +22,13 @@ type Sniffer struct {
 }
 
 func NewSniffer(iface string, logger *Logger, tracker *devices.Tracker) (*Sniffer, error) {
-	handle, err := pcap.OpenLive(iface, 1600, true, pcap.BlockForever)
+	handle, err := afpacket.NewTPacket(
+		afpacket.OptInterface(iface),
+		afpacket.OptFrameSize(65536),
+		afpacket.OptBlockSize(65536*128),
+		afpacket.OptNumBlocks(8),
+	)
 	if err != nil {
-		return nil, err
-	}
-
-	// Capture only DNS traffic (port 53)
-	if err := handle.SetBPFFilter("udp port 53"); err != nil {
-		handle.Close()
 		return nil, err
 	}
 
@@ -46,7 +45,8 @@ func (s *Sniffer) Run() {
 	s.wg.Add(1)
 	defer s.wg.Done()
 
-	src := gopacket.NewPacketSource(s.handle, s.handle.LinkType())
+	src := gopacket.NewPacketSource(s.handle, layers.LinkTypeEthernet)
+	src.NoCopy = true
 	packets := src.Packets()
 
 	for {
@@ -56,6 +56,15 @@ func (s *Sniffer) Run() {
 		case pkt, ok := <-packets:
 			if !ok {
 				return
+			}
+			// Filter for UDP port 53 in Go (no BPF needed)
+			udpLayer := pkt.Layer(layers.LayerTypeUDP)
+			if udpLayer == nil {
+				continue
+			}
+			udp := udpLayer.(*layers.UDP)
+			if udp.DstPort != 53 && udp.SrcPort != 53 {
+				continue
 			}
 			s.processPacket(pkt)
 		}
@@ -74,12 +83,11 @@ func (s *Sniffer) processPacket(pkt gopacket.Packet) {
 		return
 	}
 
-	dns, ok := dnsLayer.(*layers.DNS)
+	dnsMsg, ok := dnsLayer.(*layers.DNS)
 	if !ok {
 		return
 	}
 
-	// Extract source IP and MAC
 	var srcIP, srcMAC string
 
 	if ipLayer := pkt.Layer(layers.LayerTypeIPv4); ipLayer != nil {
@@ -95,17 +103,15 @@ func (s *Sniffer) processPacket(pkt gopacket.Packet) {
 		srcMAC = eth.SrcMAC.String()
 	}
 
-	// Skip packets from the router itself
 	if isRouterIP(srcIP) {
 		return
 	}
 
-	// Process queries (QR=false means query, not response)
-	if !dns.QR {
-		for _, q := range dns.Questions {
+	// QR=false means query, not response
+	if !dnsMsg.QR {
+		for _, q := range dnsMsg.Questions {
 			domain := string(q.Name)
 			qtype := q.Type.String()
-
 			deviceName := s.tracker.Resolve(srcIP, srcMAC)
 
 			rec := QueryRecord{
@@ -128,7 +134,6 @@ func isRouterIP(ip string) bool {
 	if parsed == nil {
 		return false
 	}
-	// Common router self-IPs — adjust if your LAN differs
 	routerIPs := []string{"192.168.1.1", "192.168.0.1", "10.0.0.1"}
 	for _, r := range routerIPs {
 		if parsed.Equal(net.ParseIP(r)) {
