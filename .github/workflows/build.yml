@@ -54,6 +54,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libpcap-dev gcc-aarch64-linux-gnu gcc-mipsel-linux-gnu
 
+      - name: Resolve Go dependencies
+        run: |
+          go mod tidy
+          go mod download
+
       - name: Build cerberusd
         env:
           GOOS: linux
@@ -90,7 +95,7 @@ jobs:
       - name: Build frontend
         working-directory: web
         run: |
-          npm ci
+          npm install
           npm run build
 
       - uses: actions/upload-artifact@v4
