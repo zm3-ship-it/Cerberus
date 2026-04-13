@@ -1,4 +1,8 @@
-dist/
-cerberus-release.tar.gz
-*.cap
-.DS_Store
+cerberusd
+cerberusd-*
+*.db
+*.bin
+web/node_modules/
+web/dist/
+imagebuilder/
+custom-files/
