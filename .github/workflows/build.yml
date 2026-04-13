@@ -49,11 +49,6 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Install cross-compilation dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libpcap-dev gcc-aarch64-linux-gnu gcc-mipsel-linux-gnu
-
       - name: Resolve Go dependencies
         run: |
           go mod tidy
@@ -64,15 +59,8 @@ jobs:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-          CGO_ENABLED: 1
+          CGO_ENABLED: "0"
         run: |
-          # Set cross-compiler based on target arch
-          case "${{ matrix.goarch }}" in
-            arm64)  export CC=aarch64-linux-gnu-gcc ;;
-            mipsle) export CC=mipsel-linux-gnu-gcc ;;
-            amd64)  export CC=gcc ;;
-          esac
-
           go build -ldflags="-s -w -X main.version=$(git describe --tags --always)" \
             -o cerberusd-${{ matrix.openwrt_arch }} \
             ./cmd/cerberusd/
@@ -163,9 +151,9 @@ jobs:
             PROFILE="${{ matrix.profile }}" \
             PACKAGES="libpcap iptables kmod-nf-nat luci-ssl \
               aircrack-ng hostapd dnsmasq tcpdump \
-              arpspoof sslstrip kmod-mac80211 \
+              dsniff kmod-mac80211 \
               wireless-tools iw kmod-cfg80211 \
-              ip-full kmod-tun" \
+              ip-full kmod-tun python3-pip" \
             FILES="../custom-files" \
             EXTRA_IMAGE_NAME="cerberus"
 
