@@ -145,6 +145,7 @@ jobs:
           mkdir -p custom-files/usr/bin
           mkdir -p custom-files/etc/init.d
           mkdir -p custom-files/etc/cerberus
+          mkdir -p custom-files/etc/uci-defaults
           mkdir -p custom-files/www/cerberus
 
           cp cerberusd-${{ matrix.openwrt_arch }} custom-files/usr/bin/cerberusd
@@ -155,6 +156,9 @@ jobs:
 
           cp openwrt/files/etc/cerberus/cerberus.json custom-files/etc/cerberus/cerberus.json
 
+          cp openwrt/files/etc/uci-defaults/99-cerberus-packages custom-files/etc/uci-defaults/99-cerberus-packages
+          chmod +x custom-files/etc/uci-defaults/99-cerberus-packages
+
           cp -r frontend-dist/* custom-files/www/cerberus/
 
       - name: Build firmware image
@@ -162,11 +166,10 @@ jobs:
         run: |
           make image \
             PROFILE="${{ matrix.profile }}" \
-            PACKAGES="libpcap iptables kmod-nf-nat luci-ssl \
-              aircrack-ng hostapd dnsmasq tcpdump \
-              dsniff kmod-mac80211 \
-              wireless-tools iw kmod-cfg80211 \
-              ip-full kmod-tun python3-pip" \
+            PACKAGES="iptables kmod-nf-nat tcpdump \
+              aircrack-ng hostapd-common dnsmasq-full \
+              kmod-mac80211 wireless-tools iw kmod-cfg80211 \
+              ip-full kmod-tun" \
             FILES="../custom-files" \
             EXTRA_IMAGE_NAME="cerberus"
 
