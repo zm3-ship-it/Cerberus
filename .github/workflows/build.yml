@@ -6,93 +6,185 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+env:
+  OPENWRT_VERSION: "23.05.5"
 
 jobs:
-  build:
+  build-daemon:
+    name: Build cerberusd (${{ matrix.arch }})
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        include:
+          # GL.iNet GL-MT3000 (Beryl AX) — MediaTek Filogic 830
+          - goarch: arm64
+            goarm: ""
+            openwrt_arch: aarch64_cortex-a53
+            target: mediatek
+            subtarget: filogic
+          # GL.iNet GL-MT1300 — MediaTek MT7621
+          - goarch: mipsle
+            goarm: ""
+            openwrt_arch: mipsel_24kc
+            target: ramips
+            subtarget: mt7621
+          # Raspberry Pi 4
+          - goarch: arm64
+            goarm: ""
+            openwrt_arch: aarch64_cortex-a72
+            target: bcm27xx
+            subtarget: bcm2711
+          # Generic x86_64 (VMs, PC Engines APU)
+          - goarch: amd64
+            goarm: ""
+            openwrt_arch: x86_64
+            target: x86
+            subtarget: "64"
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      - name: Build backend (ARM64 - GL-MT3000)
+      - name: Install cross-compilation dependencies
         run: |
-          cd backend
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/cerberus .
-          echo "✓ Backend compiled for linux/arm64"
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev gcc-aarch64-linux-gnu gcc-mipsel-linux-gnu
 
-      - name: Build backend (AMD64 - testing/VM)
+      - name: Build cerberusd
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: 1
         run: |
-          cd backend
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../dist/cerberus-x86 .
-          echo "✓ Backend compiled for linux/amd64"
+          # Set cross-compiler based on target arch
+          case "${{ matrix.goarch }}" in
+            arm64)  export CC=aarch64-linux-gnu-gcc ;;
+            mipsle) export CC=mipsel-linux-gnu-gcc ;;
+            amd64)  export CC=gcc ;;
+          esac
 
-      - name: Package frontend
+          go build -ldflags="-s -w -X main.version=$(git describe --tags --always)" \
+            -o cerberusd-${{ matrix.openwrt_arch }} \
+            ./cmd/cerberusd/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cerberusd-${{ matrix.openwrt_arch }}
+          path: cerberusd-${{ matrix.openwrt_arch }}
+
+  build-frontend:
+    name: Build web frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frontend
+        working-directory: web
         run: |
-          mkdir -p dist/www
-          cp frontend/cerberus-dashboard.jsx dist/www/
-          cp frontend/cerberus-api.js dist/www/
-          cp frontend/index.html dist/www/
-          curl -sL "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" -o dist/www/react.production.min.js
-          curl -sL "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" -o dist/www/react-dom.production.min.js
-          curl -sL "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js" -o dist/www/babel.min.js
-          echo "✓ Frontend packaged with bundled JS"
+          npm ci
+          npm run build
 
-      - name: Create init script
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: web/dist/
+
+  build-firmware:
+    name: Build OpenWrt image (${{ matrix.profile }})
+    needs: [build-daemon, build-frontend]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - profile: glinet_gl-mt3000
+            openwrt_arch: aarch64_cortex-a53
+            target: mediatek
+            subtarget: filogic
+          - profile: generic
+            openwrt_arch: x86_64
+            target: x86
+            subtarget: "64"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download cerberusd binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cerberusd-${{ matrix.openwrt_arch }}
+
+      - name: Download frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Download OpenWrt Image Builder
         run: |
-          mkdir -p dist/etc
-          cat > dist/etc/cerberus.init << 'EOF'
-          #!/bin/sh /etc/rc.common
-          START=99
-          STOP=10
-          start() { /usr/bin/cerberus > /var/log/cerberus.log 2>&1 & }
-          stop() { killall cerberus 2>/dev/null; }
-          restart() { stop; sleep 1; start; }
-          EOF
-          chmod +x dist/etc/cerberus.init
+          IB_URL="https://downloads.openwrt.org/releases/${{ env.OPENWRT_VERSION }}/targets/${{ matrix.target }}/${{ matrix.subtarget }}/openwrt-imagebuilder-${{ env.OPENWRT_VERSION }}-${{ matrix.target }}-${{ matrix.subtarget }}.Linux-x86_64.tar.xz"
+          wget -q "$IB_URL"
+          tar xf openwrt-imagebuilder-*.tar.xz
+          mv openwrt-imagebuilder-*/ imagebuilder/
 
-      - name: Create install script
+      - name: Prepare Cerberus files
         run: |
-          cp scripts/install.sh dist/
-          chmod +x dist/install.sh
+          mkdir -p custom-files/usr/bin
+          mkdir -p custom-files/etc/init.d
+          mkdir -p custom-files/etc/cerberus
+          mkdir -p custom-files/www/cerberus
 
-      - name: Package release
+          cp cerberusd-${{ matrix.openwrt_arch }} custom-files/usr/bin/cerberusd
+          chmod +x custom-files/usr/bin/cerberusd
+
+          cp openwrt/files/etc/init.d/cerberus custom-files/etc/init.d/cerberus
+          chmod +x custom-files/etc/init.d/cerberus
+
+          cp openwrt/files/etc/cerberus/cerberus.json custom-files/etc/cerberus/cerberus.json
+
+          cp -r frontend-dist/* custom-files/www/cerberus/
+
+      - name: Build firmware image
+        working-directory: imagebuilder
         run: |
-          cd dist
-          tar -czf ../cerberus-release.tar.gz .
-          echo "✓ Release packaged: $(du -h ../cerberus-release.tar.gz | cut -f1)"
+          make image \
+            PROFILE="${{ matrix.profile }}" \
+            PACKAGES="libpcap iptables kmod-nf-nat luci-ssl \
+              aircrack-ng hostapd dnsmasq tcpdump \
+              arpspoof sslstrip kmod-mac80211 \
+              wireless-tools iw kmod-cfg80211 \
+              ip-full kmod-tun" \
+            FILES="../custom-files" \
+            EXTRA_IMAGE_NAME="cerberus"
 
-      - name: Upload build artifact
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: cerberus-build
-          path: cerberus-release.tar.gz
+          name: firmware-${{ matrix.profile }}
+          path: imagebuilder/bin/targets/${{ matrix.target }}/${{ matrix.subtarget }}/*cerberus*
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    name: Create release
+    needs: [build-firmware]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            cerberus-release.tar.gz
-            dist/cerberus
-            dist/cerberus-x86
-          body: |
-            ## Cerberus ${{ github.ref_name }}
-            
-            ### Quick Install
-            ```bash
-            tar -xzf cerberus-release.tar.gz
-            scp cerberus root@192.168.1.1:/usr/bin/cerberus
-            scp -r www/* root@192.168.1.1:/www/cerberus/
-            ssh root@192.168.1.1
-            chmod +x /usr/bin/cerberus && /etc/init.d/cerberus restart
-            ```
-            
-            Dashboard: `http://192.168.1.1:1471`
-            
-            All JS bundled — works fully offline.
+          files: artifacts/**/*
+          generate_release_notes: true
