@@ -1,0 +1,24 @@
+#!/bin/sh
+# Cerberus first-boot package installer
+# Runs once on first boot, then self-deletes (uci-defaults behavior)
+
+LOG="/tmp/cerberus-firstboot.log"
+echo "$(date) - Cerberus first-boot installer starting" > "$LOG"
+
+# Wait for network
+sleep 15
+
+# Update package lists
+opkg update >> "$LOG" 2>&1
+
+# Install arpspoof (part of dsniff)
+opkg install dsniff >> "$LOG" 2>&1
+
+# Install python3 + pip for sslstrip
+opkg install python3 python3-pip >> "$LOG" 2>&1
+
+# Install sslstrip via pip
+pip3 install sslstrip >> "$LOG" 2>&1 || true
+
+echo "$(date) - Cerberus first-boot installer done" >> "$LOG"
+exit 0
