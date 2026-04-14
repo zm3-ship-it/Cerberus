@@ -5,20 +5,33 @@
 LOG="/tmp/cerberus-firstboot.log"
 echo "$(date) - Cerberus first-boot installer starting" > "$LOG"
 
-# Wait for network
-sleep 15
+# Create working directories
+mkdir -p /tmp/cerberus
+mkdir -p /tmp/cerberus-captures
 
-# Update package lists
-opkg update >> "$LOG" 2>&1
+# Try to install extra packages if we have internet
+# This is best-effort — if no network, user can run manually later:
+#   opkg update && opkg install dsniff python3 python3-pip && pip3 install sslstrip
 
-# Install arpspoof (part of dsniff)
-opkg install dsniff >> "$LOG" 2>&1
+# Wait for network (up to 60 seconds)
+TRIES=0
+while [ $TRIES -lt 12 ]; do
+    if ping -c 1 -W 2 8.8.8.8 > /dev/null 2>&1; then
+        echo "$(date) - Network available" >> "$LOG"
+        opkg update >> "$LOG" 2>&1
+        opkg install dsniff >> "$LOG" 2>&1 || true
+        opkg install python3 python3-pip >> "$LOG" 2>&1 || true
+        pip3 install sslstrip >> "$LOG" 2>&1 || true
+        echo "$(date) - Package install complete" >> "$LOG"
+        break
+    fi
+    TRIES=$((TRIES + 1))
+    sleep 5
+done
 
-# Install python3 + pip for sslstrip
-opkg install python3 python3-pip >> "$LOG" 2>&1
+if [ $TRIES -ge 12 ]; then
+    echo "$(date) - No network, skipping package install" >> "$LOG"
+fi
 
-# Install sslstrip via pip
-pip3 install sslstrip >> "$LOG" 2>&1 || true
-
-echo "$(date) - Cerberus first-boot installer done" >> "$LOG"
+echo "$(date) - First-boot script done" >> "$LOG"
 exit 0

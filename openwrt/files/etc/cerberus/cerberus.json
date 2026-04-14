@@ -1,10 +1,10 @@
 {
-  "db_path": "/etc/cerberus/cerberus.db",
+  "db_path": "/tmp/cerberus/cerberus.db",
   "interface": "br-lan",
   "monitor_iface": "wlan1",
   "wan_iface": "wan",
   "leases_file": "/tmp/dhcp.leases",
-  "doh_block_enabled": true,
+  "doh_block_enabled": false,
   "doh_resolvers": [
     "1.1.1.1", "1.0.0.1",
     "8.8.8.8", "8.8.4.4",
