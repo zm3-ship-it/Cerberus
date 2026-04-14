@@ -166,10 +166,15 @@ jobs:
         run: |
           make image \
             PROFILE="${{ matrix.profile }}" \
-            PACKAGES="-dnsmasq iptables kmod-nf-nat tcpdump \
+            PACKAGES="-dnsmasq luci luci-ssl luci-app-firewall \
+              luci-app-opkg luci-app-upnp luci-app-ddns \
+              luci-proto-relay luci-proto-wireguard \
+              iptables kmod-nf-nat tcpdump \
               aircrack-ng hostapd-common dnsmasq-full \
               kmod-mac80211 wireless-tools iw kmod-cfg80211 \
-              ip-full kmod-tun" \
+              ip-full kmod-tun relayd kmod-usb-net-rtl8152 \
+              kmod-usb-net kmod-usb-core usbutils \
+              nano htop curl wget" \
             FILES="../custom-files" \
             EXTRA_IMAGE_NAME="cerberus"
 
