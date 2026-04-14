@@ -18,25 +18,21 @@ jobs:
     strategy:
       matrix:
         include:
-          # GL.iNet GL-MT3000 (Beryl AX) — MediaTek Filogic 830
           - goarch: arm64
             goarm: ""
             openwrt_arch: aarch64_cortex-a53
             target: mediatek
             subtarget: filogic
-          # GL.iNet GL-MT1300 — MediaTek MT7621
           - goarch: mipsle
             goarm: ""
             openwrt_arch: mipsel_24kc
             target: ramips
             subtarget: mt7621
-          # Raspberry Pi 4
           - goarch: arm64
             goarm: ""
             openwrt_arch: aarch64_cortex-a72
             target: bcm27xx
             subtarget: bcm2711
-          # Generic x86_64 (VMs, PC Engines APU)
           - goarch: amd64
             goarm: ""
             openwrt_arch: x86_64
@@ -166,15 +162,9 @@ jobs:
         run: |
           make image \
             PROFILE="${{ matrix.profile }}" \
-            PACKAGES="-dnsmasq luci luci-ssl luci-app-firewall \
-              luci-app-opkg luci-app-upnp luci-app-ddns \
-              luci-proto-relay luci-proto-wireguard \
-              iptables kmod-nf-nat tcpdump \
-              aircrack-ng hostapd-common dnsmasq-full \
-              kmod-mac80211 wireless-tools iw kmod-cfg80211 \
-              ip-full kmod-tun relayd kmod-usb-net-rtl8152 \
-              kmod-usb-net kmod-usb-core usbutils \
-              nano htop curl wget" \
+            PACKAGES="-dnsmasq dnsmasq-full luci luci-proto-relay \
+              relayd iptables kmod-nf-nat tcpdump aircrack-ng \
+              wireless-tools iw ip-full kmod-tun" \
             FILES="../custom-files" \
             EXTRA_IMAGE_NAME="cerberus"
 
