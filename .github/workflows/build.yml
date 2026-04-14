@@ -166,7 +166,7 @@ jobs:
         run: |
           make image \
             PROFILE="${{ matrix.profile }}" \
-            PACKAGES="iptables kmod-nf-nat tcpdump \
+            PACKAGES="-dnsmasq iptables kmod-nf-nat tcpdump \
               aircrack-ng hostapd-common dnsmasq-full \
               kmod-mac80211 wireless-tools iw kmod-cfg80211 \
               ip-full kmod-tun" \
