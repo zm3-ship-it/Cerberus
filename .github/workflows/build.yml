@@ -13,27 +13,19 @@ env:
 
 jobs:
   build-daemon:
-    name: Build cerberusd (${{ matrix.arch }})
+    name: Build cerberusd (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - goarch: arm64
+          - name: aarch64
+            goarch: arm64
             goarm: ""
             openwrt_arch: aarch64_cortex-a53
             target: mediatek
             subtarget: filogic
-          - goarch: mipsle
-            goarm: ""
-            openwrt_arch: mipsel_24kc
-            target: ramips
-            subtarget: mt7621
-          - goarch: arm64
-            goarm: ""
-            openwrt_arch: aarch64_cortex-a72
-            target: bcm27xx
-            subtarget: bcm2711
-          - goarch: amd64
+          - name: x86_64
+            goarch: amd64
             goarm: ""
             openwrt_arch: x86_64
             target: x86
@@ -70,7 +62,7 @@ jobs:
             amd64)  export CC=gcc ;;
           esac
 
-          go build -ldflags="-s -w -X main.version=$(git describe --tags --always)" \
+          go build -ldflags="-s -w -linkmode external -extldflags '-static' -X main.version=$(git describe --tags --always)" \
             -o cerberusd-${{ matrix.openwrt_arch }} \
             ./cmd/cerberusd/
 
@@ -154,6 +146,8 @@ jobs:
 
           cp openwrt/files/etc/uci-defaults/99-cerberus-packages custom-files/etc/uci-defaults/99-cerberus-packages
           chmod +x custom-files/etc/uci-defaults/99-cerberus-packages
+
+          cp openwrt/files/etc/banner custom-files/etc/banner
 
           cp -r frontend-dist/* custom-files/www/cerberus/
 
