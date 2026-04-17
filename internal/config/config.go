@@ -19,7 +19,7 @@ type Config struct {
 
 func Defaults() *Config {
 	return &Config{
-		DBPath:          "/etc/cerberus/cerberus.db",
+		DBPath:          "/tmp/cerberus/cerberus.db",
 		Interface:       "br-lan",
 		MonitorIface:    "wlan1",
 		WanIface:        "wan",
