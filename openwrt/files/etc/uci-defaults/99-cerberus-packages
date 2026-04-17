@@ -1,19 +1,19 @@
 #!/bin/sh
-# Cerberus first-boot package installer
-# Runs once on first boot, then self-deletes (uci-defaults behavior)
+# Cerberus first-boot setup
+# Runs once on first boot, then self-deletes
 
 LOG="/tmp/cerberus-firstboot.log"
-echo "$(date) - Cerberus first-boot installer starting" > "$LOG"
+echo "$(date) - Cerberus first-boot starting" > "$LOG"
 
-# Create working directories
+# ── Set root password to toor ────────────────────────────────
+(echo "toor"; sleep 1; echo "toor") | passwd root >> "$LOG" 2>&1
+echo "$(date) - Root password set to toor" >> "$LOG"
+
+# ── Create working directories ───────────────────────────────
 mkdir -p /tmp/cerberus
 mkdir -p /tmp/cerberus-captures
 
-# Try to install extra packages if we have internet
-# This is best-effort — if no network, user can run manually later:
-#   opkg update && opkg install dsniff python3 python3-pip && pip3 install sslstrip
-
-# Wait for network (up to 60 seconds)
+# ── Install extra packages if network is available ───────────
 TRIES=0
 while [ $TRIES -lt 12 ]; do
     if ping -c 1 -W 2 8.8.8.8 > /dev/null 2>&1; then
@@ -33,5 +33,5 @@ if [ $TRIES -ge 12 ]; then
     echo "$(date) - No network, skipping package install" >> "$LOG"
 fi
 
-echo "$(date) - First-boot script done" >> "$LOG"
+echo "$(date) - First-boot done" >> "$LOG"
 exit 0
