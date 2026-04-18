@@ -59,21 +59,59 @@ func (s *Scanner) EnableMonitor() error {
 
 	// Check if already in monitor mode
 	out, _ := exec.Command("iw", "dev").Output()
-	if strings.Contains(string(out), "type monitor") {
+	outStr := string(out)
+
+	// Check if our interface or a mon variant is already monitor
+	if strings.Contains(outStr, "type monitor") {
+		// Find the actual interface name that's in monitor mode
+		for _, line := range strings.Split(outStr, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Interface ") {
+				iface := strings.TrimPrefix(line, "Interface ")
+				if strings.Contains(iface, s.iface) || strings.HasSuffix(iface, "mon") {
+					s.monIface = iface
+					log.Printf("recon: found existing monitor interface: %s", s.monIface)
+					return nil
+				}
+			}
+		}
 		s.monIface = s.iface + "mon"
 		return nil
 	}
 
 	// Try airmon-ng first
 	cmd := exec.Command("airmon-ng", "start", s.iface)
-	if out, err := cmd.CombinedOutput(); err == nil {
-		// Parse the monitor interface name from output
-		re := regexp.MustCompile(`\(monitor mode.*enabled on (\w+)\)`)
-		if matches := re.FindSubmatch(out); len(matches) > 1 {
-			s.monIface = string(matches[1])
-		} else {
-			s.monIface = s.iface + "mon"
+	if airOut, err := cmd.CombinedOutput(); err == nil {
+		airStr := string(airOut)
+		// Try multiple regex patterns for different airmon-ng versions
+		patterns := []*regexp.Regexp{
+			regexp.MustCompile(`monitor mode.*enabled on (\w+)`),
+			regexp.MustCompile(`\(monitor mode.*on (\w+)\)`),
+			regexp.MustCompile(`mac80211 monitor mode.*enabled for.*on \[.*\](\w+)`),
 		}
+		for _, re := range patterns {
+			if matches := re.FindStringSubmatch(airStr); len(matches) > 1 {
+				s.monIface = matches[1]
+				log.Printf("recon: airmon-ng enabled monitor on: %s", s.monIface)
+				return nil
+			}
+		}
+		// Fallback: check if wlanXmon exists now
+		if out2, err := exec.Command("iw", "dev").Output(); err == nil {
+			for _, line := range strings.Split(string(out2), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "Interface ") {
+					iface := strings.TrimPrefix(line, "Interface ")
+					if strings.Contains(iface, "mon") {
+						s.monIface = iface
+						log.Printf("recon: detected monitor interface: %s", s.monIface)
+						return nil
+					}
+				}
+			}
+		}
+		s.monIface = s.iface + "mon"
+		log.Printf("recon: guessing monitor interface: %s", s.monIface)
 		return nil
 	}
 
@@ -89,7 +127,15 @@ func (s *Scanner) EnableMonitor() error {
 		}
 	}
 	s.monIface = s.iface
+	log.Printf("recon: manual monitor mode on: %s", s.monIface)
 	return nil
+}
+
+// MonitorIface returns the current monitor mode interface name
+func (s *Scanner) MonitorIface() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.monIface
 }
 
 // DisableMonitor restores the interface to managed mode

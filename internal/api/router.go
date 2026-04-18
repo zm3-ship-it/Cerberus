@@ -68,6 +68,7 @@ func NewRouter(m *Modules) http.Handler {
 	mux.HandleFunc("/api/recon/scan/stop", handleReconScanStop(m.Scanner))
 	mux.HandleFunc("/api/recon/aps", handleReconAPs(m.Scanner))
 	mux.HandleFunc("/api/recon/clients", handleReconClients(m.Scanner))
+	mux.HandleFunc("/api/recon/status", handleReconStatus(m.Scanner))
 	mux.HandleFunc("/api/recon/arpscan", handleARPScan())
 
 	// ── Deauth ───────────────────────────────────────────────────
@@ -296,6 +297,15 @@ func handleReconClients(s *recon.Scanner) http.HandlerFunc {
 		} else {
 			writeJSON(w, 200, s.GetClients())
 		}
+	}
+}
+
+func handleReconStatus(s *recon.Scanner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]interface{}{
+			"running":       s.IsRunning(),
+			"monitor_iface": s.MonitorIface(),
+		})
 	}
 }
 
