@@ -1,19 +1,18 @@
 #!/bin/sh
 # Cerberus first-boot setup
-# Runs once on first boot, then self-deletes
 
 LOG="/tmp/cerberus-firstboot.log"
 echo "$(date) - Cerberus first-boot starting" > "$LOG"
 
-# ── Set root password to toor ────────────────────────────────
-(echo "toor"; sleep 1; echo "toor") | passwd root >> "$LOG" 2>&1
+# ── Set root password to toor (direct shadow write) ──────────
+sed -i 's|^root:[^:]*:|root:$1$cerberus$WRKWzVSUTSNoD..XxJosQ1:|' /etc/shadow
 echo "$(date) - Root password set to toor" >> "$LOG"
 
 # ── Create working directories ───────────────────────────────
 mkdir -p /tmp/cerberus
 mkdir -p /tmp/cerberus-captures
 
-# ── Install extra packages if network is available ───────────
+# ── Install extra packages if network available ──────────────
 TRIES=0
 while [ $TRIES -lt 12 ]; do
     if ping -c 1 -W 2 8.8.8.8 > /dev/null 2>&1; then
@@ -22,16 +21,12 @@ while [ $TRIES -lt 12 ]; do
         opkg install dsniff >> "$LOG" 2>&1 || true
         opkg install python3 python3-pip >> "$LOG" 2>&1 || true
         pip3 install sslstrip >> "$LOG" 2>&1 || true
-        echo "$(date) - Package install complete" >> "$LOG"
+        echo "$(date) - Packages done" >> "$LOG"
         break
     fi
     TRIES=$((TRIES + 1))
     sleep 5
 done
-
-if [ $TRIES -ge 12 ]; then
-    echo "$(date) - No network, skipping package install" >> "$LOG"
-fi
 
 echo "$(date) - First-boot done" >> "$LOG"
 exit 0
