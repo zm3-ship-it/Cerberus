@@ -208,11 +208,11 @@ func (s *Scanner) scanLoop() {
 	).Run()
 
 	// Start airodump-ng ONCE — runs continuously, writes CSV every second
+	// No --band flag — let airodump auto-detect supported bands
 	cmd := exec.Command("airodump-ng",
 		"--write", csvBase,
 		"--write-interval", "1",
 		"--output-format", "csv",
-		"--band", "abg",
 		s.monIface,
 	)
 	if err := cmd.Start(); err != nil {
@@ -258,6 +258,7 @@ func (s *Scanner) parseCSV(path string) {
 	now := time.Now().Unix()
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	inClients := false
+	apCount := 0
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -279,57 +280,74 @@ func (s *Scanner) parseCSV(path string) {
 			fields[i] = strings.TrimSpace(fields[i])
 		}
 
-		if !inClients && len(fields) >= 14 {
-			bssid := fields[0]
-			if !isMAC(bssid) {
+		if !inClients && len(fields) >= 11 {
+			bssid := strings.TrimSpace(fields[0])
+			if len(bssid) != 17 || !looksLikeMAC(bssid) {
 				continue
+			}
+
+			ssid := ""
+			if len(fields) >= 14 {
+				ssid = strings.TrimSpace(fields[13])
 			}
 
 			ap := &ScanResult{
 				BSSID:    bssid,
-				SSID:     strings.TrimSpace(fields[13]),
+				SSID:     ssid,
 				Encrypt:  fields[5],
 				LastSeen: now,
 			}
 
 			fmt.Sscanf(fields[3], "%d", &ap.Channel)
-			fmt.Sscanf(fields[8], "%d", &ap.Signal)
+			if len(fields) > 8 {
+				fmt.Sscanf(fields[8], "%d", &ap.Signal)
+			}
 
 			if existing, ok := s.aps[bssid]; ok {
 				existing.LastSeen = now
 				existing.Signal = ap.Signal
-				existing.Clients = ap.Clients
+				if ssid != "" {
+					existing.SSID = ssid
+				}
 			} else {
 				ap.FirstSeen = now
 				s.aps[bssid] = ap
+				apCount++
 			}
 		}
 
 		if inClients && len(fields) >= 6 {
-			mac := fields[0]
-			if !isMAC(mac) {
+			mac := strings.TrimSpace(fields[0])
+			if !looksLikeMAC(mac) {
 				continue
 			}
 
+			bssid := strings.TrimSpace(fields[5])
 			client := &ClientResult{
 				MAC:      mac,
-				BSSID:    fields[5],
+				BSSID:    bssid,
 				Probes:   strings.Join(fields[6:], ","),
 				LastSeen: now,
 			}
-			fmt.Sscanf(fields[3], "%d", &client.Signal)
+			if len(fields) > 3 {
+				fmt.Sscanf(fields[3], "%d", &client.Signal)
+			}
 
 			if existing, ok := s.clients[mac]; ok {
 				existing.LastSeen = now
 				existing.Signal = client.Signal
-				if client.BSSID != "(not associated)" {
-					existing.BSSID = client.BSSID
+				if bssid != "(not associated)" && bssid != "" {
+					existing.BSSID = bssid
 				}
 			} else {
 				client.FirstSeen = now
 				s.clients[mac] = client
 			}
 		}
+	}
+
+	if apCount > 0 {
+		log.Printf("recon: parsed %d new APs (total: %d)", apCount, len(s.aps))
 	}
 
 	// Count clients per AP
@@ -341,6 +359,25 @@ func (s *Scanner) parseCSV(path string) {
 			ap.Clients++
 		}
 	}
+}
+
+// looksLikeMAC checks if a string looks like a MAC address (XX:XX:XX:XX:XX:XX)
+func looksLikeMAC(s string) bool {
+	if len(s) != 17 {
+		return false
+	}
+	for i, c := range s {
+		if (i+1)%3 == 0 {
+			if c != ':' {
+				return false
+			}
+		} else {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // GetAPs returns all discovered access points

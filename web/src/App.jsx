@@ -88,7 +88,7 @@ const stopTwin=async()=>{await post("/eviltwin/stop");setEt(p=>({...p,on:false})
 const startPortal=async()=>{const r=await post("/captive/start",{template:cap.tpl,listen_addr:":8080"});if(r)setCap(p=>({...p,on:true}));};
 const stopPortal=async()=>{await post("/captive/stop");setCap(p=>({...p,on:false}));};
 const pollCreds=useCallback(async()=>{const d=await get("/captive/creds");if(d&&Array.isArray(d))setCreds(d);},[]);
-const startHS=async()=>{if(!hsAP)return;setHsState("capturing");const ap=aps.find(a=>(a.ssid||a.SSID)===hsAP);const iface=monIface||adR.scan+"mon";const r=await post("/handshake/start",{bssid:ap?.bssid||ap?.BSSID||"",ssid:hsAP,channel:ap?.channel||0,iface});if(!r)setHsState("idle");};
+const startHS=async()=>{if(!hsAP)return;setHsState("capturing");const ap=aps.find(a=>a.ssid===hsAP);const iface=monIface||adR.scan+"mon";if(rcing){await post("/recon/scan/stop");setRcing(false);}const r=await post("/handshake/start",{bssid:ap?.bssid||"",ssid:hsAP,channel:ap?.channel||0,iface});if(!r){setHsState("idle");setErr("Handshake capture failed to start");}};
 const pollHS=useCallback(async()=>{const d=await get("/handshake/list");if(d&&Array.isArray(d)){setHsCaptures(d);const got=d.find(c=>c.has_handshake);if(got)setHsState("captured");}},[]);
 const toggleDoh=async()=>{const r=await post("/doh/toggle");if(r)setDoh(r.enabled);};
 const toggleVpnDns=async()=>{if(vpn.dns)await post("/vpn/dns/disable");else await post("/vpn/dns/enable");const s=await get("/vpn/status");if(s)setVpn({dns:s.dns_blocking,ports:s.port_blocking});};

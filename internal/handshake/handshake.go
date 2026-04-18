@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,18 +53,29 @@ func (m *Manager) Start(id, bssid, ssid, iface string, channel int) error {
 		return fmt.Errorf("capture %s already running", id)
 	}
 
-	outFile := filepath.Join(m.saveDir, fmt.Sprintf("cerberus-%s-%s", bssid, time.Now().Format("20060102-150405")))
+	if iface == "" {
+		return fmt.Errorf("no monitor interface specified")
+	}
+	if bssid == "" {
+		return fmt.Errorf("no BSSID specified")
+	}
 
-	// Lock interface to target channel
-	exec.Command("iw", "dev", iface, "set", "channel", fmt.Sprintf("%d", channel)).Run()
+	outFile := filepath.Join(m.saveDir, fmt.Sprintf("cerberus-%s", time.Now().Format("20060102-150405")))
 
+	// Lock to target channel
+	if channel > 0 {
+		exec.Command("iw", "dev", iface, "set", "channel", fmt.Sprintf("%d", channel)).Run()
+	}
+
+	// No --output-format flag — let airodump use its default (cap)
 	cmd := exec.Command("airodump-ng",
 		"--bssid", bssid,
 		"--channel", fmt.Sprintf("%d", channel),
 		"--write", outFile,
-		"--output-format", "pcap",
 		iface,
 	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	state := &captureState{
 		capture: Capture{
@@ -80,16 +92,15 @@ func (m *Manager) Start(id, bssid, ssid, iface string, channel int) error {
 		stop: make(chan struct{}),
 	}
 
+	log.Printf("handshake: starting capture for %s (%s) ch%d iface:%s", bssid, ssid, channel, iface)
+
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("airodump-ng: %w", err)
+		return fmt.Errorf("airodump-ng failed to start: %w", err)
 	}
 
 	m.captures[id] = state
-
-	// Monitor for handshake in background
 	go m.monitorHandshake(id, state)
 
-	log.Printf("handshake: capture started for %s (%s) on ch%d", bssid, ssid, channel)
 	return nil
 }
 
@@ -178,7 +189,6 @@ func (m *Manager) monitorHandshake(id string, state *captureState) {
 		case <-state.stop:
 			return
 		case <-ticker.C:
-			// Check if the cap file contains a valid handshake
 			capFile := state.capture.FilePath
 			if _, err := os.Stat(capFile); err != nil {
 				continue
@@ -186,13 +196,18 @@ func (m *Manager) monitorHandshake(id string, state *captureState) {
 
 			// Use aircrack-ng to check for handshake
 			cmd := exec.Command("aircrack-ng", capFile)
-			out, err := cmd.Output()
+			out, err := cmd.CombinedOutput()
 			if err != nil {
 				continue
 			}
 
-			outStr := string(out)
-			if contains(outStr, "1 handshake") || contains(outStr, "WPA (1 handshake)") {
+			outStr := strings.ToLower(string(out))
+			// Check multiple patterns for different aircrack-ng versions
+			hasHandshake := strings.Contains(outStr, "1 handshake") ||
+				strings.Contains(outStr, "handshake") && strings.Contains(outStr, "wpa") ||
+				strings.Contains(outStr, "eapol") && !strings.Contains(outStr, "0 handshake")
+
+			if hasHandshake {
 				m.mu.Lock()
 				if s, ok := m.captures[id]; ok {
 					s.capture.HasShake = true
@@ -202,11 +217,11 @@ func (m *Manager) monitorHandshake(id string, state *captureState) {
 				return
 			}
 
-			// Get packet count from file size as rough indicator
+			// Update packet count from file size
 			if fi, err := os.Stat(capFile); err == nil {
 				m.mu.Lock()
 				if s, ok := m.captures[id]; ok {
-					s.capture.Packets = int(fi.Size() / 100) // rough estimate
+					s.capture.Packets = int(fi.Size() / 100)
 				}
 				m.mu.Unlock()
 			}
