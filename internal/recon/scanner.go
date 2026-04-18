@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -150,51 +151,57 @@ func (s *Scanner) IsRunning() bool {
 }
 
 func (s *Scanner) scanLoop() {
-	csvFile := "/tmp/cerberus-scan"
+	csvBase := "/tmp/cerberus-scan"
+	csvFile := csvBase + "-01.csv"
+
+	// Clean up old files from previous runs
+	exec.Command("rm", "-f",
+		csvBase+"-01.csv", csvBase+"-01.cap",
+		csvBase+"-01.kismet.csv", csvBase+"-01.kismet.netxml",
+		csvBase+"-02.csv", csvBase+"-02.cap",
+	).Run()
+
+	// Start airodump-ng ONCE — runs continuously, writes CSV every second
+	cmd := exec.Command("airodump-ng",
+		"--write", csvBase,
+		"--write-interval", "1",
+		"--output-format", "csv",
+		"--band", "abg",
+		s.monIface,
+	)
+	if err := cmd.Start(); err != nil {
+		log.Printf("recon: airodump-ng failed to start: %v", err)
+		s.mu.Lock()
+		s.running = false
+		s.mu.Unlock()
+		return
+	}
+
+	// Read and parse the CSV every 2 seconds while airodump runs
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-s.stop:
+			if cmd.Process != nil {
+				cmd.Process.Kill()
+				cmd.Wait()
+			}
+			// Cleanup
+			exec.Command("rm", "-f",
+				csvBase+"-01.csv", csvBase+"-01.cap",
+				csvBase+"-01.kismet.csv", csvBase+"-01.kismet.netxml",
+			).Run()
 			return
-		default:
+		case <-ticker.C:
+			s.parseCSV(csvFile)
 		}
-
-		// Run airodump-ng for 10 seconds, write CSV
-		cmd := exec.Command("airodump-ng",
-			"--write", csvFile,
-			"--write-interval", "5",
-			"--output-format", "csv",
-			"--band", "abg",
-			s.monIface,
-		)
-		cmd.Start()
-
-		select {
-		case <-s.stop:
-			cmd.Process.Kill()
-			return
-		case <-time.After(10 * time.Second):
-			cmd.Process.Kill()
-		}
-
-		cmd.Wait()
-
-		// Parse the CSV output
-		s.parseCSV(csvFile + "-01.csv")
-
-		// Clean up temp files
-		exec.Command("rm", "-f",
-			csvFile+"-01.csv",
-			csvFile+"-01.cap",
-			csvFile+"-01.kismet.csv",
-			csvFile+"-01.kismet.netxml",
-		).Run()
 	}
 }
 
 func (s *Scanner) parseCSV(path string) {
-	cmd := exec.Command("cat", path)
-	out, err := cmd.Output()
+	out, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}

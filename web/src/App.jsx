@@ -90,8 +90,8 @@ const toggleVpnDns=async()=>{if(vpn.dns)await post("/vpn/dns/disable");else awai
 const toggleVpnPorts=async()=>{if(vpn.ports)await post("/vpn/ports/disable");else await post("/vpn/ports/enable");const s=await get("/vpn/status");if(s)setVpn({dns:s.dns_blocking,ports:s.port_blocking});};
 
 // ── POLLING ─────────────────────────────────────────────────
-useEffect(()=>{pollDevices();pollDNS();const iv=setInterval(()=>{pollDevices();pollDNS();},5000);return()=>clearInterval(iv);},[pollDevices,pollDNS]);
-useEffect(()=>{if(!rcing)return;const iv=setInterval(pollAPs,3000);return()=>clearInterval(iv);},[rcing,pollAPs]);
+useEffect(()=>{pollDevices();pollDNS();const iv=setInterval(()=>{pollDevices();pollDNS();},3000);return()=>clearInterval(iv);},[pollDevices,pollDNS]);
+useEffect(()=>{if(!rcing)return;const iv=setInterval(pollAPs,2000);return()=>clearInterval(iv);},[rcing,pollAPs]);
 useEffect(()=>{if(!cap.on)return;const iv=setInterval(pollCreds,3000);return()=>clearInterval(iv);},[cap.on,pollCreds]);
 useEffect(()=>{if(hsState!=="capturing")return;const iv=setInterval(pollHS,5000);return()=>clearInterval(iv);},[hsState,pollHS]);
 useEffect(()=>{get("/doh/status").then(r=>{if(r)setDoh(r.enabled);});get("/vpn/status").then(r=>{if(r)setVpn({dns:r.dns_blocking,ports:r.port_blocking});});},[]);
