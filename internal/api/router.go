@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -35,6 +36,18 @@ type Modules struct {
 }
 
 func NewRouter(m *Modules) http.Handler {
+	// OpenWrt has no /etc/mime.types — register manually
+	mime.AddExtensionType(".js", "application/javascript")
+	mime.AddExtensionType(".mjs", "application/javascript")
+	mime.AddExtensionType(".css", "text/css")
+	mime.AddExtensionType(".html", "text/html")
+	mime.AddExtensionType(".json", "application/json")
+	mime.AddExtensionType(".svg", "image/svg+xml")
+	mime.AddExtensionType(".png", "image/png")
+	mime.AddExtensionType(".ico", "image/x-icon")
+	mime.AddExtensionType(".woff", "font/woff")
+	mime.AddExtensionType(".woff2", "font/woff2")
+
 	mux := http.NewServeMux()
 
 	// ── Core: DNS monitoring ─────────────────────────────────────
